@@ -1,0 +1,35 @@
+{
+  "name": "qualilab",
+  "description": "Leitura do corpus de um projeto QualiLab: documentos, codigos, trechos codificados e memos, com a censura do pesquisador preservada.",
+  "author": {
+    "name": "Luiz Pimenta Filho"
+  },
+  "homepage": "https://github.com/LuizPF42/QualiLab",
+  "license": "MIT",
+  "keywords": [
+    "qualilab",
+    "qda",
+    "pesquisa qualitativa",
+    "analise qualitativa",
+    "corpus"
+  ],
+  "mcpServers": "./mcp-codex.json",
+  "interface": {
+    "displayName": "QualiLab",
+    "shortDescription": "Le o corpus de um projeto QualiLab (so leitura)",
+    "longDescription": "Da ao modelo as mesmas ferramentas de leitura da tela MCP/RAG do QualiLab, sobre os arquivos .qualilab que voce deixar na pasta QualiLab da sua pasta de usuario. Nenhuma ferramenta escreve: o arquivo do projeto nao e alterado. Faixas censuradas pelo pesquisador chegam mascaradas.",
+    "developerName": "Luiz Pimenta Filho",
+    "category": "Productivity",
+    "capabilities": [
+      "Read"
+    ],
+    "websiteURL": "https://github.com/LuizPF42/QualiLab",
+    "defaultPrompt": [
+      "Liste os projetos QualiLab disponiveis e abra o unico que houver",
+      "Que codigos existem neste projeto, e quais tem mais trechos?",
+      "Procure no corpus por um termo e me mostre os trechos com a fonte"
+    ],
+    "screenshots": []
+  },
+  "version": "1.5.0"
+}

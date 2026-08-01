@@ -1,0 +1,19 @@
+{
+  "name": "qualilab",
+  "interface": {
+    "displayName": "QualiLab"
+  },
+  "plugins": [
+    {
+      "name": "qualilab",
+      "source": {
+        "source": "local",
+        "path": "./plugins/qualilab"
+      },
+      "policy": {
+        "installation": "AVAILABLE"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

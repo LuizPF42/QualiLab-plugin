@@ -1,0 +1,16 @@
+{
+  "name": "qualilab",
+  "owner": {
+    "name": "Luiz Pimenta Filho",
+    "url": "https://github.com/LuizPF42"
+  },
+  "description": "Ferramentas de leitura do corpus de projetos QualiLab (analise qualitativa).",
+  "plugins": [
+    {
+      "name": "qualilab",
+      "source": "./plugins/qualilab",
+      "description": "Le um projeto QualiLab (.qualilab): documentos, codigos, trechos codificados e memos. So leitura; a censura do pesquisador chega mascarada.",
+      "category": "productivity"
+    }
+  ]
+}
