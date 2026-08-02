@@ -19,9 +19,13 @@
 // oficial de CLIENTE — é quem prova a conformidade. Dependência zero significa que o .mcpb é só
 // os nossos 3 arquivos + manifest, e que a máquina de desenvolvimento não precisa de npm.
 //
-// Uso direto (sem .mcpb):
-//     node main.mjs CAMINHO.qualilab
-//     claude mcp add qualilab -- node "<caminho>/main.mjs" "<caminho>/projeto.qualilab"
+// Uso direto (sem .mcpb), e a forma publicada no npm — que é como o pdf-viewer da própria
+// Anthropic se distribui (`npx -y @modelcontextprotocol/server-pdf`). Dependência zero faz deste
+// pacote um cidadão npx ideal: 3 arquivos, nada a compilar, e a versão fica PINADA no comando.
+//     npx -y qualilab-mcp@1.5.1                       (pasta padrão ~/QualiLab)
+//     npx -y qualilab-mcp@1.5.1 "C:/.../projeto.qualilab"
+//     claude mcp add qualilab -- npx -y qualilab-mcp@1.5.1
+//     node main.mjs CAMINHO.qualilab                  (a partir do repositório, sem npm)
 //
 // SÓ LEITURA: nenhum tool escreve; o arquivo é lido uma vez, no boot, sem recarga a quente.
 
@@ -31,7 +35,7 @@ import { createInterface } from "node:readline";
 import { lerZip } from "./zip.mjs";
 import { QL_PREAMBLE, QL_TOOLS, makeQlToolRunner, unpackPdfIndex } from "./ql-core.gen.mjs";
 
-const VERSAO = "1.5.0";
+const VERSAO = "1.5.1";
 
 /* ------------------------------------------------------------------------------------------
  * As TRÊS diferenças deliberadas em relação à porta A — e só elas (documentadas no README):
@@ -192,6 +196,95 @@ const TOOLS = [
 ];
 const ANUNCIADOS = new Set(TOOLS.map(t => t.name));
 
+/* ANOTAÇÕES (`annotations` do MCP) — a submissão ao diretório da Anthropic EXIGE title e os hints
+ * de leitura/destruição em toda ferramenta, e o cliente usa os dois: o title é o que aparece no
+ * diálogo de permissão (o nome cru "get_document_content" não diz nada a quem não programa), e o
+ * readOnlyHint é o que deixa o cliente parar de perguntar a cada chamada num laço de leitura.
+ *
+ * TODAS são readOnly, e isto é o produto, não uma conveniência: nenhuma ferramenta escreve, o
+ * arquivo é aberto só para leitura e o .qualilab não é alterado. `open_project` entra junto porque
+ * o que ela troca é QUAL arquivo está carregado nesta sessão — nada no disco muda.
+ * openWorldHint FALSO: não há rede nem acesso fora da pasta servida; o universo é fechado e é o
+ * que o pesquisador escolheu. */
+const TITULOS = {
+  list_projects: "Projetos na pasta",
+  open_project: "Abrir projeto",
+  get_project: "Retrato do projeto",
+  list_documents: "Documentos do corpus",
+  get_document_content: "Texto de um documento",
+  search_corpus: "Buscar no corpus",
+  list_codes: "Esquema de códigos",
+  list_codings: "Trechos codificados",
+  list_memos: "Memos do pesquisador",
+};
+// title fora E dentro de annotations de propósito: o campo de topo é da revisão nova do protocolo,
+// e cliente de vintage anterior só lê o de dentro. Repetir custa nada; faltar deixa o nome cru.
+function anotada(t) {
+  const title = TITULOS[t.name];
+  return {
+    name: t.name, description: t.description, inputSchema: t.parameters,
+    ...(title ? { title } : {}),
+    annotations: { ...(title ? { title } : {}), readOnlyHint: true, destructiveHint: false,
+                   idempotentHint: true, openWorldHint: false },
+  };
+}
+
+/* PROMPTS — o que a skill é para o plugin, o prompt é para a extensão. O .mcpb não tem mecanismo
+ * de skills (é um pacote de SERVIDOR, não de instruções), e o chat do Claude Desktop é justamente
+ * a superfície onde o pesquisador não-técnico chega sem saber o que pedir. Estes três aparecem na
+ * interface como pontos de partida, e cada um já carrega a ordem de entrada correta — o erro mais
+ * comum do modelo aqui é analisar antes de chamar get_project.
+ * SERVIDOS DE VERDADE (prompts/list e prompts/get), e não só declarados no manifesto: declarar sem
+ * implementar deixa um botão que falha ao ser clicado. */
+const PROMPTS = [
+  {
+    name: "explorar_projeto",
+    title: "Explorar um projeto",
+    description: "Abre um projeto e faz o retrato inicial: corpus, esquema de códigos e censura.",
+    arguments: [],
+    // o texto cita só as ferramentas que EXISTEM neste modo: em arquivo único não há
+    // list_projects/open_project, e mandar chamar ferramenta inexistente gasta um turno e ensina
+    // o modelo a duvidar da própria lista
+    texto: () =>
+      (pasta
+        ? "Abra o projeto QualiLab disponível e me dê o retrato inicial. Siga esta ordem: chame" +
+          " list_projects, depois open_project no que houver (se houver mais de um, me pergunte" +
+          " qual), e só então get_project."
+        : "Me dê o retrato inicial deste projeto QualiLab. Comece chamando get_project.") +
+      " Depois me diga, em texto corrido: quantos documentos há e de que tipo, como" +
+      " está organizado o esquema de códigos, quais camadas e codificadores existem, e quanto do" +
+      " corpus está sob censura. Não analise conteúdo ainda — quero saber com o que estou lidando.",
+  },
+  {
+    name: "mapear_codebook",
+    title: "Mapear o esquema de códigos",
+    description: "Descreve a árvore de códigos com contagens, separando famílias de códigos folha.",
+    arguments: [],
+    texto: () =>
+      "Mapeie o esquema de códigos deste projeto. Chame get_project e depois list_codes. Ao" +
+      " apresentar, separe as FAMÍLIAS (códigos com filhos, que agrupam e não recebem trechos" +
+      " diretamente) dos códigos folha, e para cada uma mostre os dois números de contagem" +
+      " (diretos e com descendentes) explicando o que cada um significa. Diga de que camada vêm as" +
+      " contagens. Ao final, aponte o que chama atenção: códigos muito usados, famílias vazias," +
+      " ramos desbalanceados.",
+  },
+  {
+    name: "evidencias_de_codigo",
+    title: "Reunir evidências de um código",
+    description: "Junta os trechos codificados com um código, com a fonte de cada um.",
+    arguments: [
+      { name: "codigo", description: "nome do código a investigar", required: true },
+    ],
+    texto: (a) =>
+      `Reúna as evidências do código "${a.codigo || "(peça o nome ao pesquisador)"}" neste projeto.` +
+      " Chame get_project, ache o código com list_codes e traga os trechos com list_codings. Para" +
+      " cada trecho que citar, diga o documento, a camada e o codificador de onde veio, e cite" +
+      " apenas texto que a ferramenta devolveu nesta conversa. Se precisar de contexto ao redor de" +
+      " um trecho, leia a janela com get_document_content antes de interpretar. Ao final, resuma o" +
+      " que os trechos têm em comum e o que os divide — dizendo quantos você leu de quantos existem.",
+  },
+];
+
 async function executa(nome, args) {
   // tool fora da lista anunciada (suggest_terms, propose_codings, alucinação): o erro tem de
   // listar as ferramentas DESTA porta — o default do corredor listaria as 8 da porta A
@@ -265,7 +358,7 @@ rl.on("line", async (linha) => {
       // ecoa a versão pedida: este servidor só usa o núcleo do protocolo (tools), estável em
       // todas as revisões; recusar versão nova quebraria clientes à toa
       protocolVersion: (params && params.protocolVersion) || "2025-06-18",
-      capabilities: { tools: {} },
+      capabilities: { tools: {}, prompts: {} },
       serverInfo: { name: "qualilab", title: "QualiLab — leitura do corpus", version: VERSAO },
       instructions: QL_PREAMBLE + (pasta ? NOTA_PASTA : ""),
     });
@@ -274,21 +367,30 @@ rl.on("line", async (linha) => {
   } else if (method === "ping") {
     responde(id, {});
   } else if (method === "tools/list") {
-    responde(id, { tools: TOOLS.map(t => ({
-      name: t.name, description: t.description, inputSchema: t.parameters })) });
+    responde(id, { tools: TOOLS.map(anotada) });
   } else if (method === "tools/call") {
     const saida = await executa(params && params.name, params && params.arguments);
     responde(id, { content: [{ type: "text", text: JSON.stringify(saida) }], isError: false });
-  } else if (method === "resources/list" || method === "resources/templates/list"
-             || method === "prompts/list") {
+  } else if (method === "prompts/list") {
+    responde(id, { prompts: PROMPTS.map(p => ({
+      name: p.name, title: p.title, description: p.description, arguments: p.arguments })) });
+  } else if (method === "prompts/get") {
+    const p = PROMPTS.find(x => x.name === (params && params.name));
+    if (!p) {
+      respondeErro(id, -32602, "prompt desconhecido: " + (params && params.name) +
+        " — os desta extensão são " + PROMPTS.map(x => x.name).join(", "));
+    } else {
+      responde(id, { description: p.description, messages: [
+        { role: "user", content: { type: "text", text: p.texto((params && params.arguments) || {}) } }] });
+    }
+  } else if (method === "resources/list" || method === "resources/templates/list") {
     // LISTA VAZIA, e não -32601: cliente real pergunta mesmo sem a capability anunciada. O app do
     // ChatGPT chama resources/list logo após o initialize e registra o erro
     // (`Failed to list resources ... Mcp error: -32601`); responder o erro correto pelo protocolo
     // custava um servidor considerado problemático por um cliente que só queria saber que não há
-    // nada. Não anunciamos as capabilities porque de fato não servimos resources nem prompts —
-    // dizer que sim seria pior.
-    responde(id, method === "prompts/list" ? { prompts: [] }
-      : method === "resources/list" ? { resources: [] } : { resourceTemplates: [] });
+    // nada. Resources continua vazio de verdade — não servimos nenhum, e anunciar que sim seria
+    // pior. Prompts saiu daqui em 1.5.1: agora são servidos, e a capability é anunciada.
+    responde(id, method === "resources/list" ? { resources: [] } : { resourceTemplates: [] });
   } else if (id !== undefined) {
     respondeErro(id, -32601, "método não suportado: " + method);
   }

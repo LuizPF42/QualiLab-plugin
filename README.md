@@ -15,9 +15,14 @@ fornecedor. O aviso é justo, e a resposta é esta:
   vê chave nenhuma e não faz requisição de rede.
 - **Nenhum servidor no caminho.** O corpus sai do arquivo, na sua máquina, direto para o cliente.
   Não há nuvem do QualiLab envolvida.
-- **A censura do pesquisador é preservada.** Faixas marcadas como sensíveis chegam ao modelo
-  mascaradas com `█`, e a máscara preserva o comprimento do texto — as posições de caractere
-  continuam válidas.
+- **A censura do pesquisador é aplicada no servidor.** Faixas marcadas como sensíveis chegam ao
+  modelo mascaradas com `█`, e a máscara preserva o comprimento do texto — as posições de caractere
+  continuam válidas. **Onde isso é uma fronteira real:** no chat do Claude Desktop (o `.mcpb`), em
+  que o modelo não alcança o disco e o servidor é o único caminho até o corpus. **Onde não é:** em
+  clientes agênticos (Cowork, Claude Code, ChatGPT/Codex) o assistente tem ferramentas de arquivo
+  próprias, e o `.qualilab` é um formato de trabalho que carrega o texto **cru** — se ele abrir o
+  arquivo por fora, lê sem máscara. Ali a censura é convenção respeitada, não tranca. Detalhes em
+  [PRIVACY.md](PRIVACY.md).
 - **Só lê os arquivos que você separou.** O acesso é à pasta que você indicar (por padrão
   `QualiLab`, na sua pasta de usuário), e só a arquivos `.qualilab` dentro dela.
 
@@ -44,6 +49,19 @@ sistema. Se você não tem Node, instale a versão LTS em [nodejs.org](https://n
 > Explorer, que é quem abre tudo. Depois de reiniciar, confira num terminal novo que `node -v`
 > responde.
 
+**Não quer reiniciar, ou não quer instalar o Node?** O pacote traz um lançador de resgate para
+Windows que procura o Node onde ele costuma estar, em vez de depender do PATH — e que aproveita o
+runtime que o **app do ChatGPT** instala sozinho, se você o tiver. Na pasta do plugin instalado,
+troque em `mcp-claude.json` (Claude) ou `mcp-codex.json` (Codex):
+
+```json
+"command": "cmd.exe",
+"args": ["/d", "/s", "/c", "${CLAUDE_PLUGIN_ROOT}\\server\\run-windows.cmd"]
+```
+
+No Codex, use `".\\server\\run-windows.cmd"` (ele não interpola a variável). Depois reinicie o
+cliente. O arquivo é um `.cmd` de vinte linhas: dá para ler antes de confiar.
+
 ## Instalar
 
 ### Claude Desktop
@@ -66,6 +84,13 @@ Em **Adicionar marketplace**, o campo **URL** é `LuizPF42/QualiLab-plugin` — 
 ```
 
 Depois, `/reload-plugins` (ou reinicie a sessão).
+
+Se você só quer as ferramentas, sem o plugin (nem skill, nem atualização automática), o servidor
+também está no npm, e aí é uma linha:
+
+```
+claude mcp add qualilab -- npx -y qualilab-mcp
+```
 
 ### ChatGPT (app) / Codex
 
@@ -105,6 +130,15 @@ momento em que você exportou. Mudou o projeto no app? Exporte de novo e peça p
 São as mesmas ferramentas da tela **MCP/RAG** do QualiLab — literalmente o mesmo código, extraído
 do app. O que muda é quem paga a conversa: na tela do app, você traz a sua chave de API; aqui,
 quem fala com o modelo é a assinatura que você já tem.
+
+Junto delas vai o **vocabulário**: o pacote ensina ao assistente que código com filhos é família e
+não recebe trechos direto (por isso as contagens vêm em dois números), que camada individual não é
+a final, e que faixa de `█` é censura deliberada — não lacuna do corpus, e não algo a inferir. No
+plugin isso é uma *skill*; na extensão do Claude Desktop, viaja junto do servidor.
+
+E se você abrir a conversa sem saber o que pedir, a extensão do Claude Desktop oferece três pontos
+de partida prontos: **explorar projeto**, **mapear o esquema de códigos** e **reunir evidências de
+um código** — cada um já na ordem certa de chamadas.
 
 Elas devolvem **janelas** do corpus, não o corpus inteiro: o assistente lê trechos, e boas
 respostas dependem de ele dizer de onde tirou o que afirma. As descrições das ferramentas pedem
