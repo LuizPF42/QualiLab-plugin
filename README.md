@@ -92,13 +92,6 @@ Em **Adicionar marketplace**, o campo **URL** é `LuizPF42/QualiLab-plugin` — 
 
 Depois, `/reload-plugins` (ou reinicie a sessão).
 
-Se você só quer as ferramentas, sem o plugin (nem skill, nem atualização automática), o servidor
-também está no npm, e aí é uma linha:
-
-```
-claude mcp add qualilab -- npx -y qualilab-mcp
-```
-
 ### ChatGPT (app) / Codex
 
 Em **Configurações → Modo desenvolvedor → Plugins → Adicionar marketplace de plugins**:

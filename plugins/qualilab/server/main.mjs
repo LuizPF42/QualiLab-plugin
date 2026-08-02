@@ -19,13 +19,15 @@
 // oficial de CLIENTE — é quem prova a conformidade. Dependência zero significa que o .mcpb é só
 // os nossos 3 arquivos + manifest, e que a máquina de desenvolvimento não precisa de npm.
 //
-// Uso direto (sem .mcpb), e a forma publicada no npm — que é como o pdf-viewer da própria
-// Anthropic se distribui (`npx -y @modelcontextprotocol/server-pdf`). Dependência zero faz deste
-// pacote um cidadão npx ideal: 3 arquivos, nada a compilar, e a versão fica PINADA no comando.
-//     npx -y qualilab-mcp@1.5.1                       (pasta padrão ~/QualiLab)
-//     npx -y qualilab-mcp@1.5.1 "C:/.../projeto.qualilab"
-//     claude mcp add qualilab -- npx -y qualilab-mcp@1.5.1
-//     node main.mjs CAMINHO.qualilab                  (a partir do repositório, sem npm)
+// Uso direto (sem .mcpb):
+//     node main.mjs CAMINHO.qualilab
+//     node main.mjs PASTA                             (modo pasta; ver abaixo)
+//     claude mcp add qualilab -- node "<caminho>/main.mjs" "<caminho>/projeto.qualilab"
+//
+// Há um package.json ao lado, pronto para publicar este servidor no npm como `qualilab-mcp` — o
+// que daria um `npx -y qualilab-mcp` de uma linha, no molde do pdf-viewer da própria Anthropic.
+// NÃO ESTÁ PUBLICADO, e por isso nenhum README menciona npx: prometer instalação que não existe é
+// pior do que não oferecê-la. Se um dia publicar, o build já confere a versão do package.json.
 //
 // SÓ LEITURA: nenhum tool escreve; o arquivo é lido uma vez, no boot, sem recarga a quente.
 
