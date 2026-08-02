@@ -30,18 +30,21 @@ fornecedor. O aviso é justo, e a resposta é esta:
 
 | Cliente | Instalação | Precisa de Node.js? |
 | :-- | :-- | :-- |
-| Claude Desktop (chat) | arquivo `.mcpb` (Releases) | **não** — o Claude Desktop fornece o runtime |
-| Claude Code, e o Cowork do app | marketplace deste repo | **sim**, `node` no PATH |
-| ChatGPT (app) / Codex | marketplace deste repo | **sim**, `node` no PATH |
+| **App do Claude** — chat **e** Cowork | arquivo `.mcpb` (Releases) | **não** — o app fornece o runtime |
+| ChatGPT (app) / Codex | marketplace deste repo | **não** — o app provisiona o runtime dele |
+| Claude Code no terminal | marketplace deste repo | **sim**, `node` no PATH |
 
-**No app do Claude são duas superfícies, com mecanismos diferentes.** O **chat** carrega
-*Extensões* — é o `.mcpb`, e adicionar o marketplace não dá ferramenta nenhuma a ele. Já o
-**Cowork** é Claude Code por baixo, e usa o marketplace. Se você usa os dois, instale os dois: são
-o mesmo servidor, e um não substitui o outro.
+**Se você usa o aplicativo do Claude, instale a extensão `.mcpb` e pare por aí.** Ela atende as
+duas superfícies do app — o **chat** e o **Cowork** — e não exige instalar nada: o runtime vem
+junto com o Claude Desktop. (Medido: uma extensão instalada em *Configurações → Extensões* responde
+também nas sessões de modo agente.) O marketplace deste repositório **não** dá ferramenta nenhuma
+ao chat, então ele não substitui a extensão.
 
-Nos dois últimos, quem lança o servidor é o cliente, e ele resolve o comando `node` pelo PATH do
-sistema. Se você não tem Node, instale a versão LTS em [nodejs.org](https://nodejs.org) e
-**reinicie o computador** (ou pelo menos saia e entre de novo na sua conta).
+O marketplace serve dois casos: o **ChatGPT/Codex** — onde o app resolve o runtime sozinho, também
+sem instalar nada — e o **Claude Code no terminal**, que é o único caminho em que o `node` precisa
+estar no PATH do sistema. Se for o seu caso e você não tem Node, instale a versão LTS em
+[nodejs.org](https://nodejs.org) e **reinicie o computador** (ou pelo menos saia e entre de novo na
+sua conta).
 
 > Reiniciar só o aplicativo pode não bastar, e o sintoma engana: o plugin aparece instalado,
 > mas o assistente diz que não tem as ferramentas. É que cada programa herda o PATH de quem o
@@ -64,16 +67,20 @@ cliente. O arquivo é um `.cmd` de vinte linhas: dá para ler antes de confiar.
 
 ## Instalar
 
-### Claude Desktop
+### Aplicativo do Claude — chat e Cowork (recomendado, sem instalar nada)
 
 Baixe o `qualilab.mcpb` da [última Release](../../releases/latest) e instale em
-**Configurações → Extensões → Configurações avançadas**.
+**Configurações → Extensões → Configurações avançadas**. Só isso: as ferramentas passam a existir
+tanto no chat quanto no Cowork, e nenhum runtime precisa ser instalado.
 
 > Duplo clique no arquivo e arrastar para a janela **não funcionam** na versão do Claude Desktop
 > distribuída pela Microsoft Store, e não é defeito do pacote — aquele pacote não declara
 > associação de tipo de arquivo. Use o menu.
 
-### Claude Code
+### Claude Code no terminal
+
+É o único caminho que exige `node` no PATH (veja a tabela acima). No aplicativo do Claude, prefira
+a extensão.
 
 Em **Adicionar marketplace**, o campo **URL** é `LuizPF42/QualiLab-plugin` — depois
 **Sincronizar**, e instale o plugin `qualilab`. Na linha de comando:
