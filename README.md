@@ -25,13 +25,24 @@ fornecedor. O aviso é justo, e a resposta é esta:
 
 | Cliente | Instalação | Precisa de Node.js? |
 | :-- | :-- | :-- |
-| Claude Desktop | arquivo `.mcpb` (Releases) | **não** — o Claude Desktop fornece o runtime |
-| Claude Code | marketplace deste repo | **sim**, `node` no PATH |
+| Claude Desktop (chat) | arquivo `.mcpb` (Releases) | **não** — o Claude Desktop fornece o runtime |
+| Claude Code, e o Cowork do app | marketplace deste repo | **sim**, `node` no PATH |
 | ChatGPT (app) / Codex | marketplace deste repo | **sim**, `node` no PATH |
+
+**No app do Claude são duas superfícies, com mecanismos diferentes.** O **chat** carrega
+*Extensões* — é o `.mcpb`, e adicionar o marketplace não dá ferramenta nenhuma a ele. Já o
+**Cowork** é Claude Code por baixo, e usa o marketplace. Se você usa os dois, instale os dois: são
+o mesmo servidor, e um não substitui o outro.
 
 Nos dois últimos, quem lança o servidor é o cliente, e ele resolve o comando `node` pelo PATH do
 sistema. Se você não tem Node, instale a versão LTS em [nodejs.org](https://nodejs.org) e
-**reinicie o cliente**.
+**reinicie o computador** (ou pelo menos saia e entre de novo na sua conta).
+
+> Reiniciar só o aplicativo pode não bastar, e o sintoma engana: o plugin aparece instalado,
+> mas o assistente diz que não tem as ferramentas. É que cada programa herda o PATH de quem o
+> abriu, e o Windows não avisa os programas já em execução de que o PATH mudou — inclusive o
+> Explorer, que é quem abre tudo. Depois de reiniciar, confira num terminal novo que `node -v`
+> responde.
 
 ## Instalar
 

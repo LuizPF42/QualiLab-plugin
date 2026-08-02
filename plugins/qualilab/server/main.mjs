@@ -279,6 +279,16 @@ rl.on("line", async (linha) => {
   } else if (method === "tools/call") {
     const saida = await executa(params && params.name, params && params.arguments);
     responde(id, { content: [{ type: "text", text: JSON.stringify(saida) }], isError: false });
+  } else if (method === "resources/list" || method === "resources/templates/list"
+             || method === "prompts/list") {
+    // LISTA VAZIA, e não -32601: cliente real pergunta mesmo sem a capability anunciada. O app do
+    // ChatGPT chama resources/list logo após o initialize e registra o erro
+    // (`Failed to list resources ... Mcp error: -32601`); responder o erro correto pelo protocolo
+    // custava um servidor considerado problemático por um cliente que só queria saber que não há
+    // nada. Não anunciamos as capabilities porque de fato não servimos resources nem prompts —
+    // dizer que sim seria pior.
+    responde(id, method === "prompts/list" ? { prompts: [] }
+      : method === "resources/list" ? { resources: [] } : { resourceTemplates: [] });
   } else if (id !== undefined) {
     respondeErro(id, -32601, "método não suportado: " + method);
   }
