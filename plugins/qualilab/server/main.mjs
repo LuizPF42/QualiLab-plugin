@@ -37,7 +37,7 @@ import { createInterface } from "node:readline";
 import { lerZip } from "./zip.mjs";
 import { QL_PREAMBLE, QL_TOOLS, makeQlToolRunner, unpackPdfIndex } from "./ql-core.gen.mjs";
 
-const VERSAO = "1.5.1";
+const VERSAO = "1.5.2";
 
 /* ------------------------------------------------------------------------------------------
  * As TRÊS diferenças deliberadas em relação à porta A — e só elas (documentadas no README):
@@ -231,14 +231,47 @@ function anotada(t) {
   };
 }
 
+/* O VOCABULÁRIO, numa constante só: ele vai no `instructions` do initialize E no corpo do prompt
+ * de partida. Uma segunda cópia escrita à mão divergiria na próxima edição do index.html — o
+ * QL_PREAMBLE é EXTRAÍDO de lá pelo gen_core, e texto copiado não acompanha a extração. */
+const VOCABULARIO = QL_PREAMBLE + (pasta ? NOTA_PASTA : "");
+
 /* PROMPTS — o que a skill é para o plugin, o prompt é para a extensão. O .mcpb não tem mecanismo
  * de skills (é um pacote de SERVIDOR, não de instruções), e o chat do Claude Desktop é justamente
- * a superfície onde o pesquisador não-técnico chega sem saber o que pedir. Estes três aparecem na
+ * a superfície onde o pesquisador não-técnico chega sem saber o que pedir. Eles aparecem na
  * interface como pontos de partida, e cada um já carrega a ordem de entrada correta — o erro mais
  * comum do modelo aqui é analisar antes de chamar get_project.
  * SERVIDOS DE VERDADE (prompts/list e prompts/get), e não só declarados no manifesto: declarar sem
  * implementar deixa um botão que falha ao ser clicado. */
 const PROMPTS = [
+  /* O DEGRAU ANTERIOR AOS OUTROS TRÊS, e vem primeiro na lista porque é onde se começa. Os outros
+   * são TAREFAS: quem escolhe "mapear o esquema" já sabe o que quer. Faltava a porta de quem abre
+   * o chat sem saber o que pedir e teria de acertar o primeiro prompt no chute — este abre o
+   * projeto e DEVOLVE A BOLA com o que dá para pedir, em vez de sair analisando por conta.
+   * O vocabulário viaja aqui além do `instructions` de propósito: nem todo cliente injeta as
+   * instructions do servidor no contexto do modelo, e neste turno a chegada é garantida. */
+  {
+    name: "qualilab",
+    title: "QualiLab — começar aqui",
+    description: "Ponto de partida: ensina o vocabulário ao assistente, abre o projeto e lista o" +
+      " que dá para pedir a partir dele.",
+    arguments: [],
+    texto: () =>
+      // sem repetir o imperativo: o VOCABULARIO já abre mandando lê-lo antes de chamar ferramenta,
+      // e duas ordens iguais em sequência leem como texto gerado, não como enquadramento
+      "Vamos trabalhar com o meu projeto QualiLab. O que vem abaixo é o vocabulário desta" +
+      " ferramenta, e o erro mais comum aqui é analisar antes de abrir o projeto.\n\n" +
+      VOCABULARIO + "\n\n" +
+      (pasta
+        ? "Agora abra o projeto: chame list_projects, depois open_project (se houver mais de um," +
+          " me pergunte qual) e só então get_project."
+        : "Agora abra o projeto: comece chamando get_project.") +
+      "\n\nFeito isso, me diga em três ou quatro linhas o que há aqui — quantos documentos," +
+      " quantos códigos, quantos trechos, se existe gabarito e quanto do corpus está sob censura" +
+      " — e então me ofereça, em lista curta, o que dá para pedir a partir deste projeto: mapear" +
+      " o esquema de códigos, reunir as evidências de um código, buscar um termo no corpus, ler" +
+      " um documento, levantar os memos. Não analise conteúdo ainda: espere eu escolher.",
+  },
   {
     name: "explorar_projeto",
     title: "Explorar um projeto",
@@ -362,7 +395,7 @@ rl.on("line", async (linha) => {
       protocolVersion: (params && params.protocolVersion) || "2025-06-18",
       capabilities: { tools: {}, prompts: {} },
       serverInfo: { name: "qualilab", title: "QualiLab — leitura do corpus", version: VERSAO },
-      instructions: QL_PREAMBLE + (pasta ? NOTA_PASTA : ""),
+      instructions: VOCABULARIO,
     });
   } else if (method === "notifications/initialized" || method.startsWith("notifications/")) {
     // notificações não têm resposta
