@@ -64,6 +64,36 @@ function aggCounts(codings, codes){
   return agg;
 }
 
+/* consolida codificações do MESMO pedaço de texto — (documento, código, span exato) — numa
+   entrada só, listando quem aplicou. É a outra ponta do aggCounts acima: ele conta CODIFICAÇÃO
+   (a unidade da árvore e dos Gráficos), este agrupa por PEDAÇO DE TEXTO (a unidade de quem LÊ ou
+   ENVIA o trecho). Em projeto coletivo, 3 pesquisadores marcando a mesma frase com o mesmo código
+   são 3 codificações e 1 pedaço; repetir a citação por codificador não acrescenta nada a quem lê
+   e, no prompt da IA, multiplica o material pelo tamanho da equipe.
+   Só funde span EXATO: dois trechos com texto igual em posições diferentes são ocorrências
+   distintas e ficam ambos. A ordem de inserção é preservada (o Map garante), então a lista
+   consolidada sai na mesma ordem em que a original entrou.
+   O code_id ENTRA na chave porque há chamador que mistura códigos na mesma lista (o material do
+   painel Sugerir Codificação); onde a lista já é de um código só, ele é inofensivo. */
+function groupCodingSpans(list){
+  const groups = new Map();
+  (list||[]).forEach(c=>{
+    const key = c.document_id+'|'+c.code_id+'|'+c.span_start+'|'+c.span_end;
+    let g = groups.get(key);
+    if(!g){
+      g = { key, rep:c, items:[], authors:[], hasFinal:false,
+            document_id:c.document_id, code_id:c.code_id,
+            span_start:c.span_start, span_end:c.span_end, quote:c.quote };
+      groups.set(key, g);
+    }
+    g.items.push(c);
+    const a = c.author_name || 'anônimo';
+    if(!g.authors.includes(a)) g.authors.push(a);
+    if(c.layer==='final') g.hasFinal = true;
+  });
+  return [...groups.values()];
+}
+
 const PDF_INDEX_ORIGENS = ['nativo','ocr','vlm','humano'];
 
 function unpackPdfIndex(raw){                    // string/objeto -> { content, index } | null (tolerante)
@@ -117,7 +147,7 @@ const QL_PREAMBLE = `Você está analisando um projeto de pesquisa qualitativa n
 
 Documento: uma unidade do corpus (entrevista, decisão, artigo). Tem um conteúdo de texto puro, e é sobre as posições de caractere desse texto que tudo o mais se ancora.
 Código: um rótulo do esquema de análise, organizado em árvore. Código COM FILHOS é uma família: ela agrupa e, por construção, não recebe trechos diretamente. Por isso toda contagem vem em dois números, count_direct e count_with_descendants — família com direto 0 e agregado 1070 é o normal, não um erro.
-Trecho (coding): a aplicação de UM código a UM intervalo de caracteres de UM documento, por UM codificador, em UMA camada. Dois códigos no mesmo intervalo são dois trechos.
+Trecho (coding): a aplicação de UM código a UM intervalo de caracteres de UM documento, por UM codificador, em UMA camada. Dois códigos no mesmo intervalo são dois trechos. Já o MESMO código no MESMO intervalo, aplicado por várias pessoas, são várias codificações de um pedaço de texto só: list_codings devolve esse pedaço UMA vez, com o campo codings listando cada aplicação — três pessoas concordando não é evidência três vezes maior.
 Camada: "individual" é o trabalho de cada pesquisador; "final" é o gabarito consolidado da equipe. Quando as duas existem, a final é a que a equipe sustenta.
 Categoria (atributo): um campo preenchido por documento (tipo, ano, tribunal). É metadado do documento, não codificação de trecho.
 Memo: texto escrito pelo pesquisador sobre o projeto, um documento, um código ou um trecho. É o raciocínio dele, não dado bruto.
@@ -194,7 +224,7 @@ const QL_TOOLS = [
   },
   {
     name: 'list_codings',
-    description: 'Os trechos codificados, com o texto de cada um. É a evidência: quando você afirma que o corpus diz algo, a citação sai daqui ou de get_document_content. O campo quote é o texto real do documento naquele intervalo — cite verbatim, e nunca atribua a um codificador o que veio de outro, nem trate trabalho individual de uma pessoa como posição da equipe. Trechos de códigos de censura não são listados.',
+    description: 'Os trechos codificados, com o texto de cada um. É a evidência: quando você afirma que o corpus diz algo, a citação sai daqui ou de get_document_content. O campo quote é o texto real do documento naquele intervalo — cite verbatim, e nunca atribua a um codificador o que veio de outro, nem trate trabalho individual de uma pessoa como posição da equipe. Um item é UM PEDAÇO DE TEXTO, não uma aplicação de código: quando o mesmo intervalo recebeu o mesmo código de mais de um codificador (ou de um codificador e do gabarito), o item traz coding_count e codings — uma entrada por aplicação, com autor e camada — no lugar dos campos author/layer do topo. Trechos de códigos de censura não são listados.',
     parameters: { type:'object', properties:{
       code_id: { type:'string', description:'id como retornado por list_codes' },
       include_descendants: { type:'boolean', description:'inclui a subárvore do código (padrão falso)' },
@@ -259,16 +289,31 @@ function makeQlToolRunner(ctx){
   const pagesOf = docId => { const e = pdfIdx && pdfIdx[docId]; if(!(e && e.index && e.index.length)) return null; let mx=null; for(const f of e.index) if(f.page!=null && (mx==null || f.page>mx)) mx=f.page; return mx; };
   const subtree = id => { const out=new Set([id]); const walk=x=>(kidsOf[x]||[]).forEach(k=>{ out.add(k.id); walk(k.id); }); walk(id); return out; };
   const analyticCodings = allCodings.filter(c=>!redIds.has(c.code_id));
-  const codingRow = c => {
+  // UM PEDACO DE TEXTO por linha, nao uma codificacao (recebe um grupo do groupCodingSpans, o mesmo
+  // consolidador das telas do app): o mesmo intervalo marcado com o MESMO codigo por tres pessoas —
+  // ou por alguem e pelo gabarito — sao tres codificacoes e UM pedaco, e repetir a citacao por
+  // codificador enche a janela do modelo com o tamanho da EQUIPE. Nao e o caso raro: com camada
+  // 'all', e com 'auto' num projeto coletivo que ainda nao reconciliou, e o normal.
+  // Nada de autoria se perde (conduta 3 do preambulo): com UMA codificacao o item e o de sempre
+  // (id/author/layer/created_at/memo no topo, forma inalterada, e e o caso dominante); com mais de
+  // uma, esses campos saem para dentro de `codings`, uma entrada por aplicacao, com a nota de trecho
+  // de cada uma. Assimetrico de proposito — a forma expandida no caso comum custaria MAIS tokens
+  // que a duplicata que ela evita.
+  const codingRow = g => {
+    const c = g.rep;
     const m = maskedOf(c.document_id);
     const pg = pageOf(c.document_id, c.span_start);
-    const nota = memoOf['coding:'+c.id];
-    return { id:c.id, document_id:c.document_id, document_name:docById[c.document_id]?.name || '(documento removido)',
+    const base = { document_id:c.document_id, document_name:docById[c.document_id]?.name || '(documento removido)',
       code: { id:c.code_id, name:codeById[c.code_id]?.name || '(código removido)', path:pathOf(c.code_id) },
       span_start:c.span_start, span_end:c.span_end,
       quote: (c.span_start>=0 && c.span_end>c.span_start) ? m.slice(c.span_start, c.span_end) : (c.quote||''),
-      layer: c.layer||'individual', author: c.author_name||'anônimo', created_at: c.created_at,
-      ...(pg!=null ? { page:pg } : {}), ...(nota ? { memo:nota.content } : {}) };
+      ...(pg!=null ? { page:pg } : {}) };
+    const quem = x => { const nota = memoOf['coding:'+x.id];
+      return { layer: x.layer||'individual', author: x.author_name||'anônimo', created_at: x.created_at,
+        ...(nota ? { memo:nota.content } : {}) }; };
+    return g.items.length === 1
+      ? { id:c.id, ...base, ...quem(c) }
+      : { ...base, coding_count: g.items.length, codings: g.items.map(x=>({ id:x.id, ...quem(x) })) };
   };
 
   async function run(name, args){
@@ -394,7 +439,14 @@ function makeQlToolRunner(ctx){
         rows = qlLayer(rows, a.layer);
         if(a.author){ const q = qlNorm(a.author); rows = rows.filter(c=>qlNorm(c.author_name).includes(q)); }
         rows = rows.slice().sort((x,y)=>x.document_id===y.document_id ? x.span_start-y.span_start : String(x.document_id).localeCompare(String(y.document_id)));
-        return qlPage(rows.map(codingRow), a);
+        // consolida DEPOIS dos filtros (author/layer recortam o que entra no grupo) e depois da
+        // ordenacao (o agrupamento preserva a ordem de entrada). A consolidacao e DECLARADA: sem a
+        // nota, o total daqui contradiria em silencio o counts.codings do get_project.
+        const trechos = groupCodingSpans(rows);
+        const notes = trechos.length < rows.length
+          ? [`${rows.length} codificações do mesmo texto consolidadas em ${trechos.length} trecho(s): quando mais de um codificador (ou o gabarito) marca o MESMO intervalo com o MESMO código, o trecho vem uma vez e o campo codings lista cada aplicação, com autor e camada. O counts.codings de get_project conta aplicações, não trechos.`]
+          : [];
+        return qlPage(trechos.map(codingRow), a, notes.length ? { notes } : null);
       }
       case 'list_memos': {
         const escopos = ['project','document','code','coding'];
@@ -419,4 +471,4 @@ function makeQlToolRunner(ctx){
   return { run };
 }
 
-export { QL_PREAMBLE, QL_TOOLS, QL_LIMIT_DEF, QL_LIMIT_MAX, QL_WINDOW_DEF, QL_WINDOW_MAX, makeQlToolRunner, unpackPdfIndex, findMatches, maskRedactedContent, aggCounts, extractionHealth, pageOfOffset };
+export { QL_PREAMBLE, QL_TOOLS, QL_LIMIT_DEF, QL_LIMIT_MAX, QL_WINDOW_DEF, QL_WINDOW_MAX, makeQlToolRunner, unpackPdfIndex, findMatches, maskRedactedContent, aggCounts, groupCodingSpans, extractionHealth, pageOfOffset };

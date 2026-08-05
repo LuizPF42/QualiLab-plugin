@@ -23,7 +23,10 @@ servidor que aplica a censura do pesquisador. Ler o arquivo por fora contorna es
   diretamente — por isso as contagens vêm em dois números (`count_direct` e
   `count_with_descendants`). Família com direto 0 e agregado 1070 é o normal, não um erro.
 - **Trecho (coding)**: UM código aplicado a UM intervalo, por UM codificador, em UMA camada. Dois
-  códigos no mesmo intervalo são dois trechos.
+  códigos no mesmo intervalo são dois trechos. Mas o MESMO código no MESMO intervalo, aplicado por
+  várias pessoas, é um pedaço de texto só: `list_codings` devolve esse pedaço uma vez, com
+  `coding_count` e `codings` listando cada aplicação. Concordância entre codificadores não é
+  evidência multiplicada.
 - **Camada**: `individual` é o trabalho de cada pesquisador; `final` é o gabarito consolidado da
   equipe. Ao afirmar algo sobre codificação, diga de que camada e de que codificador ela vem.
 - **Memo**: texto do pesquisador sobre o projeto, um documento, um código ou um trecho. É o
