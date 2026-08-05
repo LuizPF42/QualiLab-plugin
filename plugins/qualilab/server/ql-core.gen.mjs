@@ -108,10 +108,10 @@ function pageOfOffset(index, off){               // offset no content -> pagina 
   return best ? best.page : null;
 }
 
-const QL_LIMIT_DEF = 50, QL_LIMIT_MAX = 200;
-const QL_WINDOW_DEF = 8000, QL_WINDOW_MAX = 20000;
-const QL_MAX_STEPS = 8;                 // passos do laco por pergunta
-const QL_CHAR_BUDGET = 240000;          // teto de material devolvido pelos tools numa conversa
+const QL_LIMIT_DEF = 100, QL_LIMIT_MAX = 1000;
+const QL_WINDOW_DEF = 30000, QL_WINDOW_MAX = 400000;
+const QL_MAX_STEPS = 24;                // passos do laco por pergunta
+const QL_CHAR_BUDGET = 600000;          // teto de material devolvido pelos tools numa conversa (= IA_TOTAL_CHAR_LIMIT)
 
 const QL_PREAMBLE = `Você está analisando um projeto de pesquisa qualitativa no QualiLab. Leia este vocabulário antes de chamar qualquer ferramenta; os termos abaixo têm significado técnico aqui.
 
@@ -150,7 +150,7 @@ const QL_TOOLS = [
       include_values: { type:'boolean', description:'traz os atributos preenchidos de cada documento (padrão falso)' },
       layer: QL_LAYER_PARAM,
       order: { type:'string', enum:['name','import','length','codings'], description:'padrão name' },
-      offset: { type:'integer' }, limit: { type:'integer', description:'padrão 50, máximo 200' },
+      offset: { type:'integer' }, limit: { type:'integer', description:'padrão 100, máximo 1000' },
     } },
   },
   {
@@ -159,7 +159,7 @@ const QL_TOOLS = [
     parameters: { type:'object', properties:{
       document_id: { type:'string', description:'id como retornado por list_documents' },
       start: { type:'integer', description:'offset inicial no documento; padrão 0' },
-      length: { type:'integer', description:'tamanho da janela; padrão 8000, máximo 20000' },
+      length: { type:'integer', description:'tamanho da janela; padrão 30000, máximo 400000 (cabe um documento inteiro numa chamada)' },
     }, required:['document_id'] },
   },
   {
@@ -180,7 +180,7 @@ const QL_TOOLS = [
     description: 'Descobre como o corpus FALA de um assunto. Devolve palavras e expressões extraídas do próprio texto dos documentos, ordenadas por proximidade de sentido com a consulta, calculada por um modelo de vetores que roda no navegador do pesquisador. Não devolve trechos: serve para você escolher os termos que vai passar a search_corpus. Se vier available falso, isso significa índice ausente, NÃO ausência de termos parecidos — não conclua nada a partir disso. Proximidade de vetor não é sinonímia: confirme com search_corpus antes de afirmar que o corpus trata do tema.',
     parameters: { type:'object', properties:{
       query: { type:'string', description:'o sentido procurado, em linguagem natural, curto' },
-      limit: { type:'integer', description:'padrão 20, máximo 50' },
+      limit: { type:'integer', description:'padrão 30, máximo 200' },
     }, required:['query'] },
   },
   {
@@ -360,7 +360,7 @@ function makeQlToolRunner(ctx){
           const { rec } = await semLoadVocab(project.id, docs);
           if(!rec) return { available:false, reason:'o índice semântico ainda não foi construído neste projeto',
             hint:'diga ao pesquisador que ele pode construí-lo na busca do leitor ("≈ termos"); enquanto isso, use search_corpus com os termos que você já conhece' };
-          const t = await semSuggest(project.id, String(a.query), docs, qlInt(a.limit, 20, 1, 50));
+          const t = await semSuggest(project.id, String(a.query), docs, qlInt(a.limit, 30, 1, 200));
           return { available:true, terms: t.map(x=>({ term:x.w, score:Math.round(x.cos*1000)/1000, occurrences:x.n })),
             notes:['termos extraídos do próprio corpus; proximidade de sentido não é sinonímia'] };
         }catch(e){ return { available:false, reason:String(e?.message||e), hint:'siga com search_corpus' }; }
