@@ -60,11 +60,12 @@ viaja.
 
 ## Código aberto
 
-Licença MIT, e o servidor tem três arquivos sem dependência nenhuma — dá para ler o que ele faz. A
-fonte fica em [QualiLab-mcp-rag](https://github.com/LuizPF42/QualiLab-mcp-rag), onde cada mudança é
-verificada por um cliente MCP real.
+Licença MIT, e o servidor tem três arquivos sem dependência nenhuma — dá para ler o que ele faz,
+aqui mesmo, em [`plugins/qualilab/server/`](plugins/qualilab/server/). Ele é gerado a partir de um
+repositório privado, onde o núcleo é extraído do próprio código do aplicativo QualiLab e cada
+mudança é verificada por um cliente MCP real.
 
 ## Contato
 
 Dúvida ou problema de privacidade:
-[abra uma issue](https://github.com/LuizPF42/QualiLab-mcp-rag/issues).
+[abra uma issue](https://github.com/LuizPF42/QualiLab-plugin/issues).

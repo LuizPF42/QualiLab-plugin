@@ -77,6 +77,12 @@ tanto no chat quanto no Cowork, e nenhum runtime precisa ser instalado.
 > distribuída pela Microsoft Store, e não é defeito do pacote — aquele pacote não declara
 > associação de tipo de arquivo. Use o menu.
 
+> **A extensão não se atualiza sozinha.** Um `.mcpb` instalado deste jeito é uma cópia local: nada
+> nele aponta de volta para este repositório, então versão nova não chega. Para atualizar, baixe o
+> `.mcpb` da [última Release](../../releases/latest) e instale por cima — vale a pena conferir de
+> vez em quando. (O plugin do Claude Code/Cowork e do Codex, abaixo, **se atualiza**: lá quem
+> entrega versão nova é o marketplace.)
+
 ### Claude Code no terminal
 
 É o único caminho que exige `node` no PATH (veja a tabela acima). No aplicativo do Claude, prefira
@@ -146,7 +152,8 @@ isso a ele; vale conferir mesmo assim.
 
 ## Licença e origem
 
-MIT. Este repositório é **gerado**: a fonte do servidor e dos manifestos é
-[LuizPF42/QualiLab-mcp-rag](https://github.com/LuizPF42/QualiLab-mcp-rag), onde o mesmo código é
-verificado por um cliente MCP real a cada mudança. Não edite os arquivos daqui — a próxima
+MIT. Este repositório é **gerado**: o servidor e os manifestos vêm de um repositório privado, onde
+o núcleo é extraído do próprio código do aplicativo QualiLab — as duas portas de leitura rodam
+literalmente o mesmo código, e a máscara de censura não é reimplementada em lugar nenhum. Cada
+mudança é verificada ali por um cliente MCP real. Não edite os arquivos daqui — a próxima
 publicação sobrescreve.
