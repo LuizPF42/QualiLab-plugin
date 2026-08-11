@@ -1,8 +1,16 @@
-// GERADO por mcp-server/gen_core.py a partir do index.html — NAO EDITE ESTE ARQUIVO.
+// GERADO por mcp-server/gen_core.py a partir de src/ — NAO EDITE ESTE ARQUIVO.
 // E o MESMO codigo da tela MCP/RAG (porta A), extraido byte a byte: executores, descricoes
 // e preambulo. Mudou algo la? Rode `py -3 mcp-server/gen_core.py` e commite este arquivo.
 // O CI roda `--check` e falha quando os dois divergem.
 
+/* MOTOR UNICO de busca textual — serve a busca do documento aberto (a search-bar do leitor) E a
+   busca global ("pesquisar +"). Ser o mesmo motor nao e economia de codigo: e o que garante que
+   os offsets dos dois batam, pra clicar num resultado global abrir o leitor no match exato (o
+   pendingJump ancora por `start`, que so vira fronteira de run se o leitor achar o MESMO match).
+   opts: { re: o padrao e regex do usuario, cs: diferencia maiusculas, whole: palavra inteira }.
+   Devolve { spans:[[start,end],...], error } — `error` so em regex invalida, pra UI avisar em vez
+   de fingir "nenhuma ocorrencia". `cap` herda o teto da busca do leitor: buscar "a" num documento
+   grande gerava dezenas de milhares de spans no DOM -> congelamento. */
 const WORD_CH = /[\p{L}\p{N}_]/u;
 function findMatches(text, query, opts, cap){
   const o = opts||{};
@@ -32,6 +40,36 @@ function findMatches(text, query, opts, cap){
    no mesmo span (ex.: um trecho com "Tema X" que por acaso contem um nome ja censurado por
    outro codigo continuaria aparecendo intacto aqui). Cobertura parcial, de proposito por ora —
    ver CLAUDE.md ("Censura — proximos passos") pra fechar essa lacuna e estender pra exports. */
+/* Detects a redaction coding whose anchor no longer matches the document. Every coding this
+   app creates or imports stores quote === content.slice(span_start, span_end) at creation
+   (applyCode, importQDPX's pushCodingsFor, remapSpans all rewrite it), so a mismatch is NEVER
+   a legitimate state: it means the content changed under the coding without a remap — write
+   queue replaying after an admin edited the text, a .qualilab merged over different content,
+   or a file crafted outside the app. When that happens the span points at the WRONG text and
+   every span-based mask built from it is misplaced (adversarial review of 1.4.21, finding 1:
+   3 inserted chars exposed 3 chars of the censored name). There is no way to know where the
+   censored text went, so every consumer FAILS CLOSED: the whole document is masked. Loud and
+   over-masking, which is the recoverable failure mode — the researcher sees it and re-anchors;
+   the alternative leaks silently. A redaction coding with an INVALID span but a non-empty
+   quote counts as broken too: today it silently contributes no range at all, which leaves its
+   target visible. Empty quote with a collapsed span is legitimate (remapSpans clamps a fully
+   deleted region to zero length) and is NOT flagged.
+   Consumers: maskRedactedContent (below), redactionRanges and maskQuoteSpans (transparency),
+   and through them the MCP tools (this helper is extracted by gen_core.py). */
+function brokenRedactionAnchor(content, codings, maskedCodeIds){
+  if(!maskedCodeIds || !maskedCodeIds.size) return false;
+  if(typeof content !== 'string') return true;
+  return (codings||[]).some(c=>{
+    if(!maskedCodeIds.has(c.code_id)) return false;
+    const q = typeof c.quote === 'string' ? c.quote : '';
+    if(!q) return false;
+    if(!(c.span_start>=0 && c.span_end>c.span_start && c.span_end<=content.length)) return true;
+    return content.slice(c.span_start, c.span_end) !== q;
+  });
+}
+/* Label used by the fail-closed branch of the prose masks. One constant, not a literal in each
+   caller: a second spelling would be the duplicated-mask bug class all over again. */
+const REDACTION_DESYNC_LABEL = '[documento omitido por segurança: uma censura perdeu a âncora após o texto mudar — reaplique a censura neste documento]';
 /* DUAS MASCARAS, DOIS CONTEXTOS (decidido em 29/jul, spec em to-do/spec-mcp-tools.md):
    - prosa SEM offsets (prompt das telas de IA, ATI, W3C, Relatorio) -> rotulo '[trecho censurado]';
    - superficie COM offsets (os tools de leitura do corpus) -> opts.fill, que PRESERVA O
@@ -42,6 +80,10 @@ function findMatches(text, query, opts, cap){
    exatamente a classe de bug que "vaza em silencio". */
 function maskRedactedContent(content, codings, maskedCodeIds, opts){
   if(!maskedCodeIds || !maskedCodeIds.size) return content;
+  // Fail closed BEFORE building ranges: a desynced anchor means the ranges below would mask
+  // the wrong place, and an invalid-span redaction would contribute no range at all.
+  if(brokenRedactionAnchor(content, codings, maskedCodeIds))
+    return (opts && opts.fill) ? '█'.repeat(content.length) : REDACTION_DESYNC_LABEL;
   const ranges = (codings||[])
     .filter(c=>maskedCodeIds.has(c.code_id) && c.span_start>=0 && c.span_end>c.span_start)
     .map(c=>[c.span_start, c.span_end]).sort((a,b)=>a[0]-b[0]);
@@ -56,6 +98,15 @@ function maskRedactedContent(content, codings, maskedCodeIds, opts){
   return out + content.slice(pos);
 }
 
+/* contagem por código AGREGADA na família: cada codificação conta no próprio código e sobe a
+   cadeia de pais. Virou obrigatório quando família passou a NÃO receber trechos — a contagem direta
+   dela é sempre zero, e a árvore ficaria dizendo que a família não é usada quando todo o uso está
+   nos filhos.
+   NÃO DEDUPLICA, e isso é escolha: um trecho codificado com DOIS subcódigos da mesma família conta
+   2 nela. É a conta do NVivo; o ATLAS.ti faz o contrário (conta 1, e explica a diferença no manual
+   com um caso de 44 vs 41). Somamos porque a unidade que o painel conta em todo lugar é a
+   CODIFICAÇÃO, não o pedaço de texto — deduplicar aqui e somar ali seria pior que qualquer das
+   duas. A UI diz "inclui os subcódigos" no title, porque contagem agregada sem aviso é armadilha. */
 function aggCounts(codings, codes){
   const direct={}; (codings||[]).forEach(c=>{ direct[c.code_id]=(direct[c.code_id]||0)+1; });
   const parentOf={}; (codes||[]).forEach(c=>{ parentOf[c.id]=c.parent_id; });
@@ -94,6 +145,10 @@ function groupCodingSpans(list){
   return [...groups.values()];
 }
 
+/* Serializacao COMPACTA do indice pra persistencia (decisao do autor 18/jul: persistir SIM).
+   Frags viram arrays [start,end,page,x,y,w,h,conf,origem-codigo] (bbox 4 casas, conf 2) — um doc
+   OCR de ~200 pags fica em poucos MB. O content vai JUNTO: e ele que permite reancorar
+   (remapIndexToContent) quando o texto for editado depois. NUNCA vai pro localStorage. */
 const PDF_INDEX_ORIGENS = ['nativo','ocr','vlm','humano'];
 
 function unpackPdfIndex(raw){                    // string/objeto -> { content, index } | null (tolerante)
@@ -105,6 +160,10 @@ function unpackPdfIndex(raw){                    // string/objeto -> { content, 
   }catch(e){ return null; }
 }
 
+/* SINAL DE QUALIDADE da extracao (triagem do batch import: achar os docs podres entre 50 sem
+   perseguir cada excecao — a saida holistica do whack-a-mole). Sinais DETERMINISTICOS e baratos
+   sobre o content, + a confianca do OCR quando o indice §4 esta a mao. Nao decide nada sozinho:
+   vira aviso com sugestao (OCR / ✏ editar). */
 function extractionHealth(content, index){
   const flags = [];
   const len = (content||'').length;
@@ -138,10 +197,43 @@ function pageOfOffset(index, off){               // offset no content -> pagina 
   return best ? best.page : null;
 }
 
+/* ===== MCP/RAG — SUPERFICIE DE LEITURA DO CORPUS (jul/2026) ==================================
+   Oito tools de SO-LEITURA que o modelo chama pra PEDIR o material, em vez de receber um recorte
+   fechado antes da pergunta. Contrato (nomes, argumentos, envelope, textos) fechado em
+   to-do/spec-mcp-tools.md; este bloco e a promocao dele pro codigo.
+
+   O ENTREGAVEL DURAVEL SAO AS DESCRICOES, nao os executores: eles so COMPOEM funcoes que ja
+   existiam (findMatches, maskRedactedContent, aggCounts, extractionHealth, semSuggest,
+   pageOfOffset). Se um executor precisar de logica NOVA de dominio, o desenho esta errado — e a
+   mascara de censura, em especial, nao pode ser reimplementada em lugar nenhum.
+
+   ISTO NAO E MCP, apesar do nome da tela: os tools sao funcoes JS chamadas na propria pagina, e
+   MCP so existe pra atravessar fronteira de PROCESSO. O contrato e que e o mesmo de um servidor
+   MCP de verdade (o spike do M0) — dai os nomes e o envelope identicos.
+
+   ONTOLOGIA E CONDUTA MORAM NO PREAMBULO, nao em cada descricao: as descricoes sao reenviadas a
+   CADA turno do laco, entao repetir o vocabulario oito vezes multiplicaria esse texto por oito em
+   todas as chamadas.
+   =============================================================================================== */
+// LIMITES DA SUPERFICIE DE LEITURA — soltos em ago/2026 junto com os do painel (ver a nota do
+// IA_DOC_CHAR_LIMIT). QL_LIMIT_* e QL_WINDOW_* sao EXTRAIDOS pelo gen_core.py e valem tambem na
+// porta B (extensao/plugins), onde quem administra o contexto e o cliente do fornecedor: la um teto
+// nosso baixo so impedia o modelo de pedir o que ele podia receber. A janela PADRAO subiu junto com
+// o maximo de proposito — o default e o que o modelo usa quando nao pensa no assunto, e 8k fazia
+// toda leitura nascer truncada. QL_MAX_STEPS/QL_CHAR_BUDGET sao do laco da TELA (nao viajam pro
+// servidor) e continuam existindo: sao a defesa contra laco caro, e nenhum deles e silencioso.
 const QL_LIMIT_DEF = 100, QL_LIMIT_MAX = 1000;
 const QL_WINDOW_DEF = 30000, QL_WINDOW_MAX = 400000;
 const QL_MAX_STEPS = 24;                // passos do laco por pergunta
-const QL_CHAR_BUDGET = 600000;          // teto de material devolvido pelos tools numa conversa (= IA_TOTAL_CHAR_LIMIT)
+// NAO volte a igualar isto ao IA_TOTAL_CHAR_LIMIT (era 600k, "= IA_TOTAL_CHAR_LIMIT", e ESTOUROU):
+// nas telas de IA aquele numero e material enviado UMA vez num prompt de uma rodada; aqui e o que
+// ACUMULA no historico de um laco, e o historico inteiro e reenviado a cada passo. Pior, a unidade
+// e caractere de JSON (uuid, chaves repetidas, \n escapado), que tokeniza a ~2,6 chars/token: 600k
+// davam ~230k tokens e a Anthropic recusava a conversa inteira com "prompt is too long". 250k dao
+// ~75k tokens, com folga pro preambulo, pra prosa dos passos e pra resposta final. Modelo de janela
+// grande (Gemini 1M) aguentaria mais, mas o teto e o mesmo pros quatro de proposito: o pesquisador
+// troca de provedor sem que o comportamento da tela mude.
+const QL_CHAR_BUDGET = 250000;          // teto de material devolvido pelos tools numa conversa
 
 const QL_PREAMBLE = `Você está analisando um projeto de pesquisa qualitativa no QualiLab. Leia este vocabulário antes de chamar qualquer ferramenta; os termos abaixo têm significado técnico aqui.
 
@@ -264,6 +356,44 @@ function qlLayer(rows, layer){
   return rows.filter(r=>(r.layer||'individual') === (rows.some(x=>x.layer==='final') ? 'final' : 'individual'));
 }
 
+/* O suggest_terms so pode devolver termo que o modelo TEM DIREITO DE LER, e o filtro e AQUI, na
+   fronteira, nao na construcao do indice. Por que aqui: o indice semantico e construido do texto
+   CRU e deve continuar sendo — ele tambem serve o "≈ termos" do LEITOR, que e tela de TRABALHO,
+   onde a censura aparece (mesma assimetria de o leitor mostrar o texto enquanto o ATI mascara).
+   Mascarar na construcao degradaria a busca do pesquisador para proteger OUTRA superficie, e
+   ainda obrigaria a um segundo indice (o semVocabHash invalidaria o cache).
+   O QUE ESTA EM JOGO: o indice nunca sai da maquina, mas o RETORNO desta ferramenta atravessa
+   para o modelo, que em BYOK e a API do provedor. E um nome censurado e exatamente o n-grama
+   repetido que o vocabulario melhor captura — entrega-lo aqui desmentiria o proprio QL_PREAMBLE,
+   que a cada turno manda o modelo nao inferir o que esta sob a mascara.
+   REGRA: sobrevive o termo que ainda ocorre no texto MASCARADO. Quem nao ocorre em lugar nenhum
+   vivia so dentro de faixa censurada e sai. A contagem tambem passa a ser a do mascarado — dizer
+   "10 ocorrencias" e o modelo achar 7 com search_corpus e a mesma incoerencia por outra porta.
+   A OMISSAO E DECLARADA pelo chamador (campo `notes`): corte silencioso e o bug do materialDesc,
+   em que o modelo le o recorte NOSSO como lacuna do corpus e conclui "isto nao e mencionado".
+   Custo: uma varredura por termo sobre o corpus mascarado, limitada pelo `cap` do findMatches e
+   pela contagem crua (o mascarado nunca tem mais ocorrencias que o cru). */
+function qlVisibleTerms(termos, textosMascarados){
+  const vivos = [];
+  let omitidos = 0;
+  for(const x of (termos || [])){
+    // FAIL-CLOSED: termo que ja contenha o caractere de faixa nunca sai daqui. Hoje o
+    // vocabulario nao consegue produzir um (o tokenizador do extractVocab so aceita letra),
+    // mas a invariante "nada com censura atravessa" nao pode depender dessa suposicao — e
+    // sem esta linha ele PASSARIA, porque o █ de fato ocorre no texto mascarado.
+    if(String(x.w || '').includes('█')){ omitidos++; continue; }
+    let n = 0;
+    for(const texto of textosMascarados){
+      if(!texto) continue;
+      const r = findMatches(texto, x.w, { re:false, cs:false, whole:false }, Math.max(1, x.n || 1));
+      n += (r.spans || []).length;
+    }
+    if(n > 0) vivos.push({ ...x, n });
+    else omitidos++;
+  }
+  return { termos: vivos, omitidos };
+}
+
 /* Os executores. Devolvem SEMPRE um objeto serializavel; erro e { error, hint } com o tool que
    resolve — nunca excecao (o laco entrega o erro ao modelo, que precisa conseguir sair dele). */
 function makeQlToolRunner(ctx){
@@ -306,7 +436,10 @@ function makeQlToolRunner(ctx){
     const base = { document_id:c.document_id, document_name:docById[c.document_id]?.name || '(documento removido)',
       code: { id:c.code_id, name:codeById[c.code_id]?.name || '(código removido)', path:pathOf(c.code_id) },
       span_start:c.span_start, span_end:c.span_end,
-      quote: (c.span_start>=0 && c.span_end>c.span_start) ? m.slice(c.span_start, c.span_end) : (c.quote||''),
+      // A lost anchor NEVER falls back to the stored quote: it cannot be verified against the
+      // served (masked) text and may carry the censored text itself — finding 2 of the 1.4.21
+      // adversarial review. The omission is declared in the list_codings envelope notes.
+      quote: (c.span_start>=0 && c.span_end>c.span_start) ? m.slice(c.span_start, c.span_end) : '',
       ...(pg!=null ? { page:pg } : {}) };
     const quem = x => { const nota = memoOf['coding:'+x.id];
       return { layer: x.layer||'individual', author: x.author_name||'anônimo', created_at: x.created_at,
@@ -406,8 +539,11 @@ function makeQlToolRunner(ctx){
           if(!rec) return { available:false, reason:'o índice semântico ainda não foi construído neste projeto',
             hint:'diga ao pesquisador que ele pode construí-lo na busca do leitor ("≈ termos"); enquanto isso, use search_corpus com os termos que você já conhece' };
           const t = await semSuggest(project.id, String(a.query), docs, qlInt(a.limit, 30, 1, 200));
-          return { available:true, terms: t.map(x=>({ term:x.w, score:Math.round(x.cos*1000)/1000, occurrences:x.n })),
-            notes:['termos extraídos do próprio corpus; proximidade de sentido não é sinonímia'] };
+          // filtro de censura na fronteira — ver qlVisibleTerms
+          const vis = qlVisibleTerms(t, docs.map(d=>maskedOf(d.id)));
+          const notes = ['termos extraídos do próprio corpus; proximidade de sentido não é sinonímia'];
+          if(vis.omitidos) notes.push(vis.omitidos + ' termo(s) sugerido(s) foram omitidos por só ocorrerem em trechos censurados. Isso é recorte deliberado do pesquisador, não ausência no corpus: não conclua que o assunto não é mencionado.');
+          return { available:true, terms: vis.termos.map(x=>({ term:x.w, score:Math.round(x.cos*1000)/1000, occurrences:x.n })), notes };
         }catch(e){ return { available:false, reason:String(e?.message||e), hint:'siga com search_corpus' }; }
       }
       case 'list_codes': {
@@ -446,6 +582,11 @@ function makeQlToolRunner(ctx){
         const notes = trechos.length < rows.length
           ? [`${rows.length} codificações do mesmo texto consolidadas em ${trechos.length} trecho(s): quando mais de um codificador (ou o gabarito) marca o MESMO intervalo com o MESMO código, o trecho vem uma vez e o campo codings lista cada aplicação, com autor e camada. O counts.codings de get_project conta aplicações, não trechos.`]
           : [];
+        // Declared, never silent (same rule as every other partial result in this envelope):
+        // a coding whose anchor is invalid ships with an empty quote, because the stored text
+        // cannot be verified against the served document.
+        const semAncora = trechos.filter(g=>!(g.rep.span_start>=0 && g.rep.span_end>g.rep.span_start)).length;
+        if(semAncora) notes.push(`${semAncora} trecho(s) sem âncora válida no documento: o campo quote veio vazio porque o texto guardado não pôde ser conferido contra o texto servido. Não trate como citação perdida do corpus — é defeito de ancoragem do dado.`);
         return qlPage(trechos.map(codingRow), a, notes.length ? { notes } : null);
       }
       case 'list_memos': {
@@ -471,4 +612,4 @@ function makeQlToolRunner(ctx){
   return { run };
 }
 
-export { QL_PREAMBLE, QL_TOOLS, QL_LIMIT_DEF, QL_LIMIT_MAX, QL_WINDOW_DEF, QL_WINDOW_MAX, makeQlToolRunner, unpackPdfIndex, findMatches, maskRedactedContent, aggCounts, groupCodingSpans, extractionHealth, pageOfOffset };
+export { QL_PREAMBLE, QL_TOOLS, QL_LIMIT_DEF, QL_LIMIT_MAX, QL_WINDOW_DEF, QL_WINDOW_MAX, makeQlToolRunner, unpackPdfIndex, findMatches, maskRedactedContent, brokenRedactionAnchor, REDACTION_DESYNC_LABEL, aggCounts, groupCodingSpans, extractionHealth, pageOfOffset };
