@@ -37,7 +37,7 @@ import { createInterface } from "node:readline";
 import { lerZip } from "./zip.mjs";
 import { QL_PREAMBLE, QL_TOOLS, makeQlToolRunner, unpackPdfIndex } from "./ql-core.gen.mjs";
 
-const VERSAO = "1.5.6";
+const VERSAO = "1.5.7";
 
 /* ------------------------------------------------------------------------------------------
  * As TRÊS diferenças deliberadas em relação à porta A — e só elas (documentadas no README):
@@ -158,9 +158,27 @@ function listaArquivos() {
   catch { return []; }
 }
 
+/* S7 — PROJETO QUE DECLARA NÃO USAR IA NÃO ABRE AQUI.
+   Este servidor lê o .qualilab e despeja corpus a cada turno do laço, que é literalmente o eixo do
+   interruptor `restrict_ai` acontecendo FORA do aplicativo. Fechar as telas de IA no app e deixar
+   esta porta aberta seria fechar a porta e deixar a janela.
+   A decisão é de SESSÃO, então mora aqui e não no núcleo extraído pelo gen_core.py — mesma família
+   das cinco diferenças deliberadas desta porta.
+   NÃO é fronteira técnica, e nada aqui finge que seja: quem editar o JSON da configuração, ou
+   tirar a declaração no próprio QualiLab e exportar de novo, passa. O que isto faz é o mesmo que o
+   app faz — limitar a VAZÃO, que é o que importa quando o dano é proporcional à quantidade. */
+const declaraSemIa = db => ((db && db._meta) || {}).restrict_ai === "all";
+const RECUSA_HINT = "o pesquisador desativou os recursos de IA neste projeto, e o arquivo carrega essa" +
+  " decisão. Não contorne: diga isso a ele. Se a decisão mudou, ele reativa em Projeto → Recursos de IA," +
+  " dentro do QualiLab, e exporta o .qualilab de novo. Nesta pasta pode haver outros projetos —" +
+  " list_projects mostra quais.";
+const recusaSemIa = nomeArq => ({ error: `o projeto ${nomeArq} declara não usar IA`, hint: RECUSA_HINT });
+
 let ctx = null, corredor = null, aberto = null;
+let bloqueado = null;   // nome do arquivo recusado (modo arquivo único): toda chamada devolve a recusa
 function abreProjeto(caminhoArq) {
   const { db, pdfIdx } = carregaQualilab(caminhoArq);
+  if (declaraSemIa(db)) { const e = new Error("projeto declara não usar IA"); e.semIa = true; throw e; }
   ctx = montaContexto(db, pdfIdx);
   corredor = makeQlToolRunner(ctx);
   aberto = caminhoArq;
@@ -174,16 +192,23 @@ function resumoDoAberto() {
 
 if (arquivoUnico) {
   try { abreProjeto(arquivoUnico); } catch (e) {
-    console.error("qualilab-mcp: não consegui abrir " + arquivoUnico + " — " + (e && e.message || e));
-    process.exit(1);
+    /* projeto declarado NÃO derruba o servidor, de propósito: com exit(1) o cliente mostra só
+       "o servidor falhou" e ninguém fica sabendo POR QUE. Ele sobe e responde a recusa em toda
+       chamada, que é a única forma de a explicação chegar ao modelo — e por ele, ao pesquisador. */
+    if (e && e.semIa) { bloqueado = basename(arquivoUnico); console.error("qualilab-mcp: " + arquivoUnico + " declara não usar IA — nenhuma ferramenta vai responder sobre ele"); }
+    else {
+      console.error("qualilab-mcp: não consegui abrir " + arquivoUnico + " — " + (e && e.message || e));
+      process.exit(1);
+    }
   }
-  console.error("qualilab-mcp: " + resumoDoAberto());
+  if (!bloqueado) console.error("qualilab-mcp: " + resumoDoAberto());
 } else {
   const achados = listaArquivos();
   // pasta com UM projeto abre sozinha: o caso comum não deve custar duas chamadas ao modelo
   if (achados.length === 1) {
     try { abreProjeto(join(pasta, achados[0])); console.error("qualilab-mcp: " + resumoDoAberto()); }
-    catch (e) { console.error("qualilab-mcp: falhei ao abrir " + achados[0] + " — " + (e && e.message || e)); }
+    catch (e) { console.error("qualilab-mcp: " + (e && e.semIa ? achados[0] + " declara não usar IA — não foi aberto"
+                                                              : "falhei ao abrir " + achados[0] + " — " + (e && e.message || e))); }
   } else {
     console.error(`qualilab-mcp: ${achados.length} projeto(s) em ${pasta} — nenhum aberto ainda`);
   }
@@ -326,6 +351,10 @@ async function executa(nome, args) {
   if (!ANUNCIADOS.has(nome))
     return { error: `ferramenta desconhecida: ${nome}`,
              hint: `as disponíveis são ${TOOLS.map(t => t.name).join(", ")}` };
+  /* S7 — modo arquivo único com projeto declarado: a recusa vem ANTES de tudo, inclusive de
+     list_projects (que nem existe aqui). É o equivalente, nesta porta, de as telas de IA sumirem
+     no app: não há caminho que devolva material deste projeto. */
+  if (bloqueado) return recusaSemIa(bloqueado);
   if (nome === "list_projects") {
     const itens = listaArquivos();
     return { items: itens.map(f => ({ file: f, open: aberto ? basename(aberto) === f : false })),
@@ -341,6 +370,10 @@ async function executa(nome, args) {
                hint: itens.length ? `os desta pasta são ${itens.join(", ")}`
                                   : "a pasta não tem nenhum arquivo .qualilab" };
     try { abreProjeto(join(pasta, pedido)); } catch (e) {
+      // S7: o projeto que declara não usar IA tem recusa PRÓPRIA — cair na frase genérica de
+      // "arquivo corrompido" mandaria o modelo tentar de novo, e a decisão é do pesquisador, não
+      // um defeito do arquivo.
+      if (e && e.semIa) return recusaSemIa(pedido);
       return { error: `não consegui abrir ${pedido}: ${e && e.message || e}`,
                hint: "o arquivo pode estar corrompido ou não ser um .qualilab; tente outro de list_projects" };
     }
