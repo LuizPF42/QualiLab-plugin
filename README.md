@@ -23,6 +23,13 @@ fornecedor. O aviso é justo, e a resposta é esta:
   próprias, e o `.qualilab` é um formato de trabalho que carrega o texto **cru** — se ele abrir o
   arquivo por fora, lê sem máscara. Ali a censura é convenção respeitada, não tranca. Detalhes em
   [PRIVACY.md](PRIVACY.md).
+- **Projeto que declara não usar IA não abre aqui.** Desde a 1.4.32, o QualiLab deixa desligar os
+  recursos de IA de um projeto (Projeto → Recursos de IA), e essa decisão viaja dentro do
+  `.qualilab`. Este pacote a respeita: com **um arquivo só**, ele sobe e toda ferramenta responde
+  explicando o motivo; com **uma pasta**, a lista continua completa e quem recusa é a abertura —
+  os outros projetos seguem abrindo. Existe porque este servidor entrega corpus ao modelo a cada
+  turno, que é exatamente o que aquela chave desliga no aplicativo. Como a censura, **não é uma
+  tranca**: quem reativar a IA no próprio QualiLab e exportar de novo, passa.
 - **Só lê os arquivos que você separou.** O acesso é à pasta que você indicar (por padrão
   `QualiLab`, na sua pasta de usuário), e só a arquivos `.qualilab` dentro dela.
 
@@ -127,6 +134,10 @@ e quase todo sintoma de "não apareceu ferramenta nenhuma" é isso.
 Cada projeto é lido **uma vez, quando é aberto**: o que o assistente enxerga é o retrato do
 momento em que você exportou. Mudou o projeto no app? Exporte de novo e peça para abrir outra vez
 — sem reinstalar nada.
+
+Se o assistente responder que **o projeto declara não usar IA**, não é defeito: aquele projeto tem
+os recursos de IA desligados no QualiLab, e o pacote respeita isso (veja a lista acima). Para
+mudar, reative em **Projeto → Recursos de IA** no aplicativo e exporte o `.qualilab` de novo.
 
 ### O que o assistente ganha
 
