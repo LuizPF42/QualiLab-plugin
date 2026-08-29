@@ -1,0 +1,13 @@
+{
+  "name": "qualilab",
+  "version": "1.5.8",
+  "description": "Leitura do corpus de um projeto QualiLab: documentos, codigos, trechos codificados e memos, com a censura do pesquisador preservada.",
+  "contextFileName": "GEMINI.md",
+  "mcpServers": {
+    "qualilab": {
+      "command": "node",
+      "args": ["${extensionPath}${/}plugins${/}qualilab${/}server${/}main.mjs"],
+      "cwd": "${extensionPath}"
+    }
+  }
+}

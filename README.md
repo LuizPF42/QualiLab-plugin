@@ -1,6 +1,6 @@
 # QualiLab — leitura do corpus, dentro do seu assistente
 
-Aponta o **Claude** ou o **ChatGPT** que você já usa para o corpus de um projeto
+Aponta o **Claude**, o **ChatGPT** ou o **Gemini** que você já usa para o corpus de um projeto
 [QualiLab](https://github.com/LuizPF42/QualiLab): documentos, códigos, trechos codificados e
 memos. O assistente passa a **pedir** o material em vez de recebê-lo colado numa caixa de texto.
 
@@ -33,13 +33,16 @@ fornecedor. O aviso é justo, e a resposta é esta:
 - **Só lê os arquivos que você separou.** O acesso é à pasta que você indicar (por padrão
   `QualiLab`, na sua pasta de usuário), e só a arquivos `.qualilab` dentro dela.
 
-## Requisito, e ele não vale para os três
+## Requisito, e ele não vale para todos
 
 | Cliente | Instalação | Precisa de Node.js? |
 | :-- | :-- | :-- |
 | **App do Claude** — chat **e** Cowork | arquivo `.mcpb` (Releases) | **não** — o app fornece o runtime |
 | ChatGPT (app) / Codex | marketplace deste repo | **não** — o app provisiona o runtime dele |
 | Claude Code no terminal | marketplace deste repo | **sim**, `node` no PATH |
+| **Gemini CLI** | `gemini extensions install` | **já está lá** — o Gemini CLI é um programa Node |
+| Gemini Code Assist (VS Code / JetBrains) | um bloco em `settings.json` | **sim**, `node` no PATH |
+| Gemini (app de chat, gemini.google.com) | **não dá** — veja abaixo | — |
 
 **Se você usa o aplicativo do Claude, instale a extensão `.mcpb` e pare por aí.** Ela atende as
 duas superfícies do app — o **chat** e o **Cowork** — e não exige instalar nada: o runtime vem
@@ -123,6 +126,68 @@ codex plugin add qualilab@qualilab
 **Reinicie o app depois de instalar.** A configuração dos servidores é lida só na inicialização,
 e quase todo sintoma de "não apareceu ferramenta nenhuma" é isso.
 
+### Gemini CLI
+
+Este repositório também é uma **extensão do Gemini CLI** — o `gemini-extension.json` está na raiz,
+que é onde o instalador procura. Uma linha:
+
+```
+gemini extensions install https://github.com/LuizPF42/QualiLab-plugin
+```
+
+Depois reinicie o `gemini`. Não há Node a instalar: o Gemini CLI **é** um programa Node, então o
+runtime que este servidor precisa já veio com ele — a seção do PATH acima não vale aqui.
+
+Além das ferramentas, a extensão traz o vocabulário (o `GEMINI.md`, que é a mesma coisa que a
+*skill* entregue ao Claude Code e ao Codex) e os pontos de partida como comandos de barra:
+`/qualilab` — para quem abre a conversa sem saber o que pedir —, `/explorar_projeto`,
+`/mapear_codebook` e `/evidencias_de_codigo`.
+
+Para servir uma pasta que não seja `~/QualiLab`, edite o `gemini-extension.json` da extensão
+instalada (a pasta que o instalador criou dentro de `~/.gemini/extensions/`) e acrescente o
+caminho aos `args`:
+
+```json
+"args": ["${extensionPath}${/}plugins${/}qualilab${/}server${/}main.mjs", "C:\\Users\\voce\\Documentos\\corpus"]
+```
+
+### Gemini Code Assist (VS Code / JetBrains)
+
+O Code Assist lê servidores MCP de `~/.gemini/settings.json` — ou de `.gemini/settings.json` na raiz
+do projeto, que dá para versionar e compartilhar com a equipe. Clone este repositório onde quiser e
+aponte para ele:
+
+```json
+{
+  "mcpServers": {
+    "qualilab": {
+      "command": "node",
+      "args": ["/caminho/para/QualiLab-plugin/plugins/qualilab/server/main.mjs"]
+    }
+  }
+}
+```
+
+Este é o único caminho do Gemini em que o `node` precisa estar no PATH do sistema — vale a seção
+sobre reiniciar o computador, mais acima. (O Code Assist compartilha a pasta `~/.gemini` com o
+Gemini CLI, então a extensão instalada acima pode acabar valendo para os dois; o bloco em
+`settings.json` é o caminho documentado, e é o que eu recomendo se quiser garantia.)
+
+### Gemini no navegador (gemini.google.com) — o que **não** dá
+
+O app de chat do Gemini aceita apps personalizados, mas só pela **URL de um servidor MCP**: um
+endereço na internet, que o Google alcança. Este pacote não tem endereço nenhum — ele é um programa
+que roda na sua máquina e conversa pela entrada e saída padrão, e é justamente por isso que o
+corpus não sai do seu computador.
+
+Para caber ali, o `.qualilab` teria de ficar atrás de um servidor público, e as três promessas do
+começo deste arquivo cairiam juntas: passaria a existir um servidor no caminho, o corpus sairia da
+sua máquina, e a censura do pesquisador dependeria de uma máquina que não é a sua. **Não vamos
+fazer isso**, e é melhor dizer isso do que oferecer um túnel e chamar de compatibilidade.
+
+Se você quer o Gemini lendo o seu corpus hoje, o caminho é o **Gemini CLI**, acima: mesma conta,
+mesmo modelo, e o corpus continua onde está.
+
 ## Usar
 
 1. No QualiLab, com o projeto aberto: **exportar ▾ → salvar `.qualilab`**.
@@ -151,11 +216,13 @@ quem fala com o modelo é a assinatura que você já tem.
 Junto delas vai o **vocabulário**: o pacote ensina ao assistente que código com filhos é família e
 não recebe trechos direto (por isso as contagens vêm em dois números), que camada individual não é
 a final, e que faixa de `█` é censura deliberada — não lacuna do corpus, e não algo a inferir. No
-plugin isso é uma *skill*; na extensão do Claude Desktop, viaja junto do servidor.
+plugin do Claude Code e do Codex isso é uma *skill*; na extensão do Gemini CLI é o `GEMINI.md`;
+na extensão do Claude Desktop, viaja junto do servidor.
 
-E se você abrir a conversa sem saber o que pedir, a extensão do Claude Desktop oferece três pontos
-de partida prontos: **explorar projeto**, **mapear o esquema de códigos** e **reunir evidências de
-um código** — cada um já na ordem certa de chamadas.
+E se você abrir a conversa sem saber o que pedir, há três pontos de partida prontos: **explorar
+projeto**, **mapear o esquema de códigos** e **reunir evidências de um código** — cada um já na
+ordem certa de chamadas. Eles aparecem na interface da extensão do Claude Desktop, e como
+comandos de barra no Gemini CLI.
 
 Elas devolvem **janelas** do corpus, não o corpus inteiro: o assistente lê trechos, e boas
 respostas dependem de ele dizer de onde tirou o que afirma. As descrições das ferramentas pedem
