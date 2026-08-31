@@ -29,6 +29,7 @@ rem ----------------------------------------------------------------------------
 setlocal EnableExtensions DisableDelayedExpansion
 
 set "ql_node=%USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe"
+if not exist "%ql_node%" for /d %%D in ("%LOCALAPPDATA%\OpenAI\Codex\runtimes\cua_node\*") do if exist "%%D\bin\node.exe" set "ql_node=%%D\bin\node.exe"
 if not exist "%ql_node%" set "ql_node=%LOCALAPPDATA%\nodejs\node.exe"
 if not exist "%ql_node%" set "ql_node=%ProgramFiles%\nodejs\node.exe"
 if not exist "%ql_node%" set "ql_node=%ProgramFiles(x86)%\nodejs\node.exe"

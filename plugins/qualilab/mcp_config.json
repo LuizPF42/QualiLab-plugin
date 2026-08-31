@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "qualilab": {
+      "command": "node",
+      "args": ["./server/main.mjs"],
+      "cwd": "."
+    }
+  }
+}

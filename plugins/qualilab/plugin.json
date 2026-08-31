@@ -1,0 +1,17 @@
+{
+  "name": "qualilab",
+  "description": "Leitura do corpus de um projeto QualiLab: documentos, codigos, trechos codificados e memos, com a censura do pesquisador preservada.",
+  "author": {
+    "name": "Luiz Pimenta Filho"
+  },
+  "homepage": "https://github.com/LuizPF42/QualiLab",
+  "license": "MIT",
+  "keywords": [
+    "qualilab",
+    "qda",
+    "pesquisa qualitativa",
+    "analise qualitativa",
+    "corpus"
+  ],
+  "version": "1.5.10"
+}
