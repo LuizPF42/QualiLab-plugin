@@ -70,6 +70,25 @@ function brokenRedactionAnchor(content, codings, maskedCodeIds){
 /* Label used by the fail-closed branch of the prose masks. One constant, not a literal in each
    caller: a second spelling would be the duplicated-mask bug class all over again. */
 const REDACTION_DESYNC_LABEL = '[documento omitido por segurança: uma censura perdeu a âncora após o texto mudar — reaplique a censura neste documento]';
+/* O rotulo da mascara de PROSA. Ele tinha a disciplina do vizinho acima escrita no comentario e
+   nao aplicada a si mesmo: era LITERAL em 16 pontos de src/ (a mascara aqui, o maskSlice e o
+   maskQuoteSpans da transparencia, o fallback do TextQuoteSelector do W3C, o span .redacted do
+   leitor ATI, o Relatorio, e as 8 telas de IA — metade delas EXPLICANDO a grafia ao modelo).
+   Uma segunda grafia ali nao quebra nada: ela vaza em silencio, que e a assinatura desta area.
+   SAO DUAS GRAFIAS, E A SEGUNDA E LEGITIMA: '[censurado]', mais curta, e a que o maskQuoteSpans
+   usa para a PORCAO de um quote (o trecho continua legivel em volta, e o rotulo longo comeria a
+   frase). Ela vira REDACTED_PART_LABEL, abaixo. A assimetria que sobra esta MEDIDA e NAO foi
+   mexida aqui de proposito: o maskSlice tambem mascara porcao e usa a LONGA. Igualar muda o que
+   sai no leitor ATI e no W3C, ou seja, e mudanca de ARTEFATO — decisao a tomar com os olhos
+   abertos e teste proprio, nao carona numa extracao de constante.
+   ⚠️ NAO E ROTULO DE INTERFACE, e por isso ele NAO passa pelo catalogo de idioma: esta string
+   sai no HTML do leitor ATI, no `exact` do W3C e no retorno dos tools de leitura — ou seja, chega
+   a TERCEIROS e ao MODELO, e num artefato de transparencia o rotulo e parte do dado publicado.
+   Traduzi-lo com a UI faria o mesmo arquivo mudar de conteudo conforme a lingua do navegador de
+   quem exportou. Quem quiser i18n aqui decide POR ARTEFATO, nao por navegador.
+   O `█` do opts.fill nao e afetado: ele preserva comprimento e nao usa rotulo nenhum. */
+const REDACTED_LABEL = '[trecho censurado]';
+
 /* DUAS MASCARAS, DOIS CONTEXTOS (decidido em 29/jul, spec em to-do/spec-mcp-tools.md):
    - prosa SEM offsets (prompt das telas de IA, ATI, W3C, Relatorio) -> rotulo '[trecho censurado]';
    - superficie COM offsets (os tools de leitura do corpus) -> opts.fill, que PRESERVA O
@@ -92,10 +111,39 @@ function maskRedactedContent(content, codings, maskedCodeIds, opts){
   const fill = !!(opts && opts.fill);
   let out='', pos=0;
   for(const [s,e] of merged){
-    out += content.slice(pos,s) + (fill ? '█'.repeat(Math.max(0, Math.min(e, content.length) - s)) : '[trecho censurado]');
+    out += content.slice(pos,s) + (fill ? '█'.repeat(Math.max(0, Math.min(e, content.length) - s)) : REDACTED_LABEL);
     pos = e;
   }
   return out + content.slice(pos);
+}
+
+/* ===== O NOME DO AUTOR: O QUE SE GRAVA x O QUE SE MOSTRA (fatia 1 do item EN) =====
+   ACHADO MEDIDO em 31/ago/2026, e ele e da familia do coderKey da v1.4.28: o app GRAVA
+   'anonimo' (sem acento — o default do SupabaseStore, o do joinProject e o do ensureAuthor da
+   exportacao) e EXIBE 'anônimo' (com acento, em ~24 pontos, como fallback de author_name vazio).
+   SINTOMA, e ele passa por dado: no MESMO projeto as duas grafias aparecem lado a lado, e onde a
+   identidade e por NOME — o `'__nm__'+author_name` logo acima, que e como todo material
+   IMPORTADO e agrupado — elas contam como DUAS PESSOAS. Nada quebra e nada avisa; a
+   Reconciliacao mostra dois chips onde ha um codificador.
+
+   authorLabel e a fronteira: nome gravado entra, rotulo sai. E ela unifica as duas grafias, que
+   e a metade que conserta o bug de verdade — trocar so o fallback deixaria o 'anonimo' JA
+   GRAVADO no banco das pessoas aparecendo cru ao lado do outro.
+
+   O PRECO ACEITO, escrito para nao ser descoberto por acidente: quem se chamar literalmente
+   "anonimo" sera exibido como anônimo. E aceitavel porque o valor gravado nao muda (a identidade
+   e a chave continuam intactas), o caso e improvavel, e a alternativa e a divergencia visivel
+   que isto existe para fechar.
+
+   ORIGENS DE IMPORTACAO tambem passam por aqui, e sao MAPA EXPLICITO, nunca heuristica: so
+   'Planilha' e portugues ('Taguette' e 'Zotero' sao nomes proprios e nao se traduzem). Nome de
+   PESSOA jamais entra nesse mapa — ele e dado do pesquisador. */
+const AUTHOR_ANON = 'anonimo';        // o VALOR gravado quando nao ha nome (sem acento)
+const AUTHOR_LABELS = { 'anonimo': 'anônimo', 'anônimo': 'anônimo', 'Planilha': 'Planilha' };
+function authorLabel(n){
+  const s = (n==null ? '' : String(n)).trim();
+  if(!s) return AUTHOR_LABELS[AUTHOR_ANON];
+  return AUTHOR_LABELS[s] || s;
 }
 
 /* contagem por código AGREGADA na família: cada codificação conta no próprio código e sobe a
@@ -138,7 +186,7 @@ function groupCodingSpans(list){
       groups.set(key, g);
     }
     g.items.push(c);
-    const a = c.author_name || 'anônimo';
+    const a = authorLabel(c.author_name);
     if(!g.authors.includes(a)) g.authors.push(a);
     if(c.layer==='final') g.hasFinal = true;
   });
@@ -442,7 +490,7 @@ function makeQlToolRunner(ctx){
       quote: (c.span_start>=0 && c.span_end>c.span_start) ? m.slice(c.span_start, c.span_end) : '',
       ...(pg!=null ? { page:pg } : {}) };
     const quem = x => { const nota = memoOf['coding:'+x.id];
-      return { layer: x.layer||'individual', author: x.author_name||'anônimo', created_at: x.created_at,
+      return { layer: x.layer||'individual', author: authorLabel(x.author_name), created_at: x.created_at,
         ...(nota ? { memo:nota.content } : {}) }; };
     return g.items.length === 1
       ? { id:c.id, ...base, ...quem(c) }
@@ -496,7 +544,7 @@ function makeQlToolRunner(ctx){
           if(a.include_values){
             row.values = qlLayer((allValues||[]).filter(v=>v.document_id===d.id), a.layer)
               .map(v=>({ category:(cats||[]).find(c=>c.id===v.category_id)?.name || '(categoria removida)',
-                value:v.value, layer:v.layer||'individual', author:v.author_name||'anônimo' }));
+                value:v.value, layer:v.layer||'individual', author:authorLabel(v.author_name) }));
           }
           return row;
         }), a);
@@ -511,7 +559,7 @@ function makeQlToolRunner(ctx){
         return { document_id:d.id, document_name:d.name, content: texto.slice(start, end),
           start, end, total_length: texto.length, next_start: end < texto.length ? end : null,
           codings_in_window: qlLayer(naJanela, a.layer).map(c=>({ code:pathOf(c.code_id), span_start:c.span_start,
-            span_end:c.span_end, layer:c.layer||'individual', author:c.author_name||'anônimo' })) };
+            span_end:c.span_end, layer:c.layer||'individual', author:authorLabel(c.author_name) })) };
       }
       case 'search_corpus': {
         if(!a.query || !String(a.query).trim()) return { error:'query vazia', hint:'passe o termo a procurar; para descobrir termos do corpus, use suggest_terms' };
@@ -603,7 +651,7 @@ function makeQlToolRunner(ctx){
             : m.scope==='code' ? pathOf(m.target_id)
             : m.scope==='coding' ? (docById[allCodings.find(c=>c.id===m.target_id)?.document_id]?.name || '(trecho removido)')
             : (project?.name||'projeto'),
-          content:m.content, author:m.author_name||'anônimo', updated_at:m.updated_at })), a);
+          content:m.content, author:authorLabel(m.author_name), updated_at:m.updated_at })), a);
       }
       default:
         return { error:`ferramenta desconhecida: ${name}`, hint:`as disponíveis são ${QL_TOOLS.map(t=>t.name).join(', ')}` };
@@ -612,4 +660,4 @@ function makeQlToolRunner(ctx){
   return { run };
 }
 
-export { QL_PREAMBLE, QL_TOOLS, QL_LIMIT_DEF, QL_LIMIT_MAX, QL_WINDOW_DEF, QL_WINDOW_MAX, makeQlToolRunner, unpackPdfIndex, findMatches, maskRedactedContent, brokenRedactionAnchor, REDACTION_DESYNC_LABEL, aggCounts, groupCodingSpans, extractionHealth, pageOfOffset };
+export { QL_PREAMBLE, QL_TOOLS, QL_LIMIT_DEF, QL_LIMIT_MAX, QL_WINDOW_DEF, QL_WINDOW_MAX, makeQlToolRunner, unpackPdfIndex, findMatches, maskRedactedContent, brokenRedactionAnchor, REDACTION_DESYNC_LABEL, REDACTED_LABEL, aggCounts, groupCodingSpans, extractionHealth, pageOfOffset };
