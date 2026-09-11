@@ -146,6 +146,24 @@ function authorLabel(n){
   return AUTHOR_LABELS[s] || s;
 }
 
+/* S05 — SUBIR A HIERARQUIA SEM RISCO DE NÃO TERMINAR. A FK de `codes.parent_id` garante que o
+   pai EXISTE, nunca que a árvore seja acíclica: com A→B e B→A, todo `while(p) p=parentOf[p]`
+   roda para sempre e CONGELA a aba — a de quem criou o ciclo e a de todo mundo que carregar o
+   mesmo esquema. O trigger `codes_acyclic_guard` fecha a porta da nuvem; esta função fecha a do
+   CLIENTE, que é por onde entra o resto: `.qualilab` de terceiro (o contrato mínimo exige só
+   `documents[]`), rascunho e arquivo, que não têm trigger nenhum.
+   DEVOLVE OS ANCESTRAIS EM ORDEM, e para no primeiro repetido — um ciclo produz a subida até
+   fechar e nada mais. `visto` em vez de só um teto porque o Set responde a pergunta certa
+   ("já passei por aqui?") e o teto responde outra ("está fundo demais?"); os dois juntos custam
+   nada e o segundo ainda protege contra cadeia legítima absurda vinda de arquivo. */
+const ANCESTOR_MAX_DEPTH = 64;
+function ancestorsOf(id, getParent){
+  const out = [], visto = new Set([id]);
+  let p = getParent(id);
+  while(p && !visto.has(p) && out.length < ANCESTOR_MAX_DEPTH){ out.push(p); visto.add(p); p = getParent(p); }
+  return out;
+}
+
 /* contagem por código AGREGADA na família: cada codificação conta no próprio código e sobe a
    cadeia de pais. Virou obrigatório quando família passou a NÃO receber trechos — a contagem direta
    dela é sempre zero, e a árvore ficaria dizendo que a família não é usada quando todo o uso está
@@ -159,7 +177,7 @@ function aggCounts(codings, codes){
   const direct={}; (codings||[]).forEach(c=>{ direct[c.code_id]=(direct[c.code_id]||0)+1; });
   const parentOf={}; (codes||[]).forEach(c=>{ parentOf[c.id]=c.parent_id; });
   const agg={...direct};
-  Object.entries(direct).forEach(([codeId,n])=>{ let p=parentOf[codeId]; while(p){ agg[p]=(agg[p]||0)+n; p=parentOf[p]; } });
+  Object.entries(direct).forEach(([codeId,n])=>{ for(const p of ancestorsOf(codeId, x=>parentOf[x])) agg[p]=(agg[p]||0)+n; });
   return agg;
 }
 
@@ -660,4 +678,4 @@ function makeQlToolRunner(ctx){
   return { run };
 }
 
-export { QL_PREAMBLE, QL_TOOLS, QL_LIMIT_DEF, QL_LIMIT_MAX, QL_WINDOW_DEF, QL_WINDOW_MAX, makeQlToolRunner, unpackPdfIndex, findMatches, maskRedactedContent, brokenRedactionAnchor, REDACTION_DESYNC_LABEL, REDACTED_LABEL, aggCounts, groupCodingSpans, extractionHealth, pageOfOffset };
+export { QL_PREAMBLE, QL_TOOLS, QL_LIMIT_DEF, QL_LIMIT_MAX, QL_WINDOW_DEF, QL_WINDOW_MAX, makeQlToolRunner, unpackPdfIndex, findMatches, maskRedactedContent, brokenRedactionAnchor, REDACTION_DESYNC_LABEL, REDACTED_LABEL, ancestorsOf, aggCounts, groupCodingSpans, extractionHealth, pageOfOffset };
