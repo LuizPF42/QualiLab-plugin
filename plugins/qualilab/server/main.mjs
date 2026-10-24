@@ -37,7 +37,7 @@ import { createInterface } from "node:readline";
 import { lerZip } from "./zip.mjs";
 import { QL_PREAMBLE, QL_TOOLS, makeQlToolRunner, unpackPdfIndex } from "./ql-core.gen.mjs";
 
-const VERSAO = "1.5.12";
+const VERSAO = "1.5.14";
 
 /* ------------------------------------------------------------------------------------------
  * As TRÊS diferenças deliberadas em relação à porta A — e só elas (documentadas no README):
@@ -413,13 +413,25 @@ function respondeErro(id, code, message) {
 }
 
 const rl = createInterface({ input: process.stdin, terminal: false });
+// NOTHING a client sends may take the process down. The parse below filters what is not a request
+// object; this catch covers the rest: a field the MODEL controls, such as {"toString":1} where a
+// string was expected, threw while being interpolated inside executa, an unhandled rejection.
 rl.on("line", async (linha) => {
+  let id;
+  try { const m = JSON.parse(String(linha).trim() || "null"); id = m && typeof m === "object" ? m.id : undefined; } catch { /* not JSON: trataLinha ignores it */ }
+  try { await trataLinha(linha); }
+  catch (e) { if (id !== undefined) respondeErro(id, -32603, "erro interno ao tratar o pedido"); }
+});
+async function trataLinha(linha) {
   linha = linha.trim();
   if (!linha) return;
   let msg;
   try { msg = JSON.parse(linha); } catch { return; } // lixo no stdin: ignora, não derruba
+  // Valid JSON that is not a request object ("null", a number, a batch array) used to throw in the
+  // destructuring below: an unhandled rejection that took the whole server down.
+  if (!msg || typeof msg !== "object" || Array.isArray(msg)) return;
   const { id, method, params } = msg;
-  if (method === undefined) return;                  // resposta a request nosso (não fazemos nenhum)
+  if (typeof method !== "string") return;            // resposta a request nosso (não fazemos nenhum)
 
   if (method === "initialize") {
     responde(id, {
@@ -462,5 +474,5 @@ rl.on("line", async (linha) => {
   } else if (id !== undefined) {
     respondeErro(id, -32601, "método não suportado: " + method);
   }
-});
+}
 rl.on("close", () => process.exit(0));
