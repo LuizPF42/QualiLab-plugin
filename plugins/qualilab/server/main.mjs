@@ -37,7 +37,7 @@ import { createInterface } from "node:readline";
 import { lerZip } from "./zip.mjs";
 import { QL_PREAMBLE, QL_TOOLS, makeQlToolRunner, unpackPdfIndex } from "./ql-core.gen.mjs";
 
-const VERSAO = "1.5.14";
+const VERSAO = "1.5.15";
 
 /* ------------------------------------------------------------------------------------------
  * As TRÊS diferenças deliberadas em relação à porta A — e só elas (documentadas no README):
@@ -91,7 +91,8 @@ function carregaQualilab(caminho) {
   const pdfIdx = {};
   let db;
   if (bruto[0] === 0x50 && bruto[1] === 0x4b) { // "PK"
-    const entradas = lerZip(bruto);
+    // only what this server uses: the PDFs stay in the archive, unread
+    const entradas = lerZip(bruto, (n) => n === "project.json" || (n.startsWith("pdfindex/") && n.endsWith(".json")));
     const projeto = entradas.get("project.json");
     if (!projeto) throw new Error("zip sem project.json: isto é um .qualilab?");
     db = JSON.parse(projeto.toString("utf8"));
