@@ -37,7 +37,7 @@ import { createInterface } from "node:readline";
 import { lerZip } from "./zip.mjs";
 import { QL_PREAMBLE, QL_TOOLS, makeQlToolRunner, unpackPdfIndex } from "./ql-core.gen.mjs";
 
-const VERSAO = "1.5.15";
+const VERSAO = "1.5.16";
 
 /* ------------------------------------------------------------------------------------------
  * As TRÊS diferenças deliberadas em relação à porta A — e só elas (documentadas no README):
@@ -141,14 +141,38 @@ const naoVazio = a => a && !a.startsWith("-") && !a.includes("${");
 const alvo = process.argv.slice(2).find(naoVazio) || (naoVazio(process.env.QUALILAB_FILE) && process.env.QUALILAB_FILE)
   || join(process.env.USERPROFILE || process.env.HOME || ".", "QualiLab");
 
+/* ALVO AUSENTE NÃO DERRUBA O SERVIDOR — a mesma decisão do projeto que declara não usar IA
+   (logo abaixo), e aqui ela vale por DOIS motivos, o segundo visível só no macOS:
+   1. com exit(1) o cliente mostra "Server disconnected" e mais nada: quem instalou não fica
+      sabendo QUAL caminho faltou, nem que o que faltou foi uma pasta. Subindo e recusando em toda
+      chamada, a explicação chega ao modelo e, por ele, a quem está lendo a tela;
+   2. stderr para PIPE é ASSÍNCRONO no macOS (síncrono no Windows e no Linux), então
+      `console.error(...)` colado num `process.exit(1)` DESCARTA a mensagem — nem no log do cliente
+      sobra o motivo, e o que se vê é o `initialize` sem resposta seguido de "Server transport
+      closed". Foi assim que duas instalações em MacBook morreram caladas, enquanto no Windows a
+      mesma falha imprimia a explicação. NÃO volte a emparelhar console.error com process.exit.
+   Rodando à mão num terminal (stdin é TTY) continua saindo com 1: ali a escrita é síncrona, a
+   mensagem chega, e quem chamou de um script quer o código de saída. */
 let pasta = null, arquivoUnico = null;
+let recusaBoot = null;   // {error,hint}: toda chamada devolve isto, em vez de o servidor morrer
 try {
   if (statSync(alvo).isDirectory()) pasta = resolve(alvo); else arquivoUnico = resolve(alvo);
 } catch {
+  recusaBoot = {
+    error: "não achei " + alvo,
+    hint: (/\.qualilab$/i.test(alvo)
+      ? "este é o arquivo que o servidor deveria ler, e ele não existe nesta máquina."
+      : "esta é a pasta onde o servidor procura os projetos, e ela não existe nesta máquina.") +
+      " Repasse isto ao pesquisador, com o caminho acima: no Claude Desktop, em Configurações →" +
+      " Extensões → QualiLab, o campo \"Pasta dos projetos\" precisa apontar uma pasta que exista" +
+      " e que tenha dentro pelo menos um arquivo .qualilab (no QualiLab: exportar ▾ → salvar" +
+      " .qualilab). Depois de corrigir é preciso reiniciar o Claude Desktop: a configuração de um" +
+      " servidor MCP só é lida na inicialização. Nenhuma ferramenta responde sobre o corpus até lá.",
+  };
   console.error("qualilab-mcp: não achei " + alvo + "\n" +
     "  uso: node main.mjs CAMINHO.qualilab   (um projeto)\n" +
     "       node main.mjs CAMINHO_DA_PASTA   (vários; padrão ~/QualiLab)");
-  process.exit(1);
+  if (process.stdin.isTTY) process.exit(1);
 }
 
 // os nomes vêm SEMPRE desta lista, e open_project só aceita o que está nela: o modelo escolhe o
@@ -191,18 +215,29 @@ function resumoDoAberto() {
     `${ctx.allCodings.length} trechos, ${red} de censura — ${basename(aberto)}`;
 }
 
-if (arquivoUnico) {
+if (recusaBoot) {
+  // nada a fazer: o motivo já foi ao stderr, e o servidor segue de pé só para poder explicá-lo
+  // em toda chamada (ver o comentário acima)
+} else if (arquivoUnico) {
   try { abreProjeto(arquivoUnico); } catch (e) {
     /* projeto declarado NÃO derruba o servidor, de propósito: com exit(1) o cliente mostra só
        "o servidor falhou" e ninguém fica sabendo POR QUE. Ele sobe e responde a recusa em toda
        chamada, que é a única forma de a explicação chegar ao modelo — e por ele, ao pesquisador. */
     if (e && e.semIa) { bloqueado = basename(arquivoUnico); console.error("qualilab-mcp: " + arquivoUnico + " declara não usar IA — nenhuma ferramenta vai responder sobre ele"); }
     else {
+      // arquivo ILEGÍVEL pela mesma razão do alvo ausente: subir e explicar, nunca exit(1)
+      recusaBoot = {
+        error: "não consegui abrir " + basename(arquivoUnico) + ": " + (e && e.message || e),
+        hint: "o arquivo existe, mas não foi lido como um projeto QualiLab — pode estar corrompido," +
+          " truncado, ou não ser um .qualilab. Repasse isto ao pesquisador: exporte o projeto de" +
+          " novo no QualiLab (exportar ▾ → salvar .qualilab), ponha o arquivo no lugar e reinicie" +
+          " o Claude Desktop, que é quando a configuração do servidor é lida.",
+      };
       console.error("qualilab-mcp: não consegui abrir " + arquivoUnico + " — " + (e && e.message || e));
-      process.exit(1);
+      if (process.stdin.isTTY) process.exit(1);
     }
   }
-  if (!bloqueado) console.error("qualilab-mcp: " + resumoDoAberto());
+  if (!bloqueado && !recusaBoot) console.error("qualilab-mcp: " + resumoDoAberto());
 } else {
   const achados = listaArquivos();
   // pasta com UM projeto abre sozinha: o caso comum não deve custar duas chamadas ao modelo
@@ -355,6 +390,9 @@ async function executa(nome, args) {
   /* S7 — modo arquivo único com projeto declarado: a recusa vem ANTES de tudo, inclusive de
      list_projects (que nem existe aqui). É o equivalente, nesta porta, de as telas de IA sumirem
      no app: não há caminho que devolva material deste projeto. */
+  /* ALVO AUSENTE OU ILEGÍVEL — a recusa vem antes de tudo, como a do S7, e pelo mesmo motivo:
+     é o único caminho pelo qual "a pasta configurada não existe" chega a quem instalou. */
+  if (recusaBoot) return recusaBoot;
   if (bloqueado) return recusaSemIa(bloqueado);
   if (nome === "list_projects") {
     const itens = listaArquivos();

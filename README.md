@@ -78,6 +78,12 @@ cliente. O arquivo é um `.cmd` de vinte linhas: dá para ler antes de confiar.
 
 ## Instalar
 
+> **A pasta vem antes da primeira pergunta.** Crie uma pasta chamada `QualiLab` na sua pasta de
+> usuário (`~/QualiLab`, ou `C:\Users\<você>\QualiLab`) e deixe um arquivo `.qualilab` dentro
+> dela: é de lá que o assistente lê, em todos os caminhos abaixo. Instalar antes de ter a pasta
+> funciona — a extensão diz na conversa o que está faltando, em vez de falhar sem explicação.
+> Como exportar o arquivo do QualiLab está em [Usar](#usar).
+
 ### Aplicativo do Claude — chat e Cowork (recomendado, sem instalar nada)
 
 Baixe o `qualilab.mcpb` da [última Release](../../releases/latest) e instale em
