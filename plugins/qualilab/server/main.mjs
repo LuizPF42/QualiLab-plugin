@@ -35,9 +35,9 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { lerZip } from "./zip.mjs";
-import { QL_PREAMBLE, QL_TOOLS, makeQlToolRunner, unpackPdfIndex } from "./ql-core.gen.mjs";
+import { QL_PREAMBLE, QL_TOOLS, makeQlToolRunner, unpackPdfIndex, qlArgsError } from "./ql-core.gen.mjs";
 
-const VERSAO = "1.5.16";
+const VERSAO = "1.5.18";
 
 /* ------------------------------------------------------------------------------------------
  * As TRÊS diferenças deliberadas em relação à porta A — e só elas (documentadas no README):
@@ -394,6 +394,11 @@ async function executa(nome, args) {
      é o único caminho pelo qual "a pasta configurada não existe" chega a quem instalou. */
   if (recusaBoot) return recusaBoot;
   if (bloqueado) return recusaSemIa(bloqueado);
+  // the two session tools never reach the corridor, so they check their arguments here, with the
+  // same helper the corridor uses (an unknown name is refused, never ignored: M6)
+  const sessao = TOOLS_PASTA.find(t => t.name === nome);
+  const recusa = sessao && qlArgsError(sessao, args);
+  if (recusa) return recusa;
   if (nome === "list_projects") {
     const itens = listaArquivos();
     return { items: itens.map(f => ({ file: f, open: aberto ? basename(aberto) === f : false })),
