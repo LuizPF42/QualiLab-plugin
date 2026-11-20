@@ -122,7 +122,11 @@ function maskRedactedContent(content, codings, maskedCodeIds, opts){
    the note written on a redacted coding (scope coding: "the speaker here is ..."). Both stay out of
    everything that goes to a model. Single source: the MCP list_memos calls the predicate and the four
    AI panels call memosForModel, which also returns HOW MANY left, because the screen says so (M6).
-   `codeOf(id)` answers the code_id of a coding. */
+   `codeOf(id)` answers the code_id of a coding.
+   FAIL-CLOSED (nov/2026): with redaction in the project, a coding note whose coding is not in
+   `allCodings` (the aggregate still loading, or the coding gone) cannot be cleared, so it stays out
+   too. It is counted apart (`pendentes`), because saying "about redaction" would be false: the
+   screen says it is waiting, and the note comes back once the aggregate arrives. */
 function memoOnRedaction(m, redIds, codeOf){
   if(!m || !redIds || !redIds.size) return false;
   if(m.scope==='code') return redIds.has(m.target_id);
@@ -837,7 +841,16 @@ function makeQlToolRunner(ctx){
         const quem = new Set(analyticCodings.map(c=>authorLabel(c.author_name)));
         if(camadas.length > 1 || quem.size > 1)
           notes.push(`As contagens somam aplicações de código, de todas as camadas e de todos os codificadores (${camadas.join(' e ')}; ${quem.size} codificador(es)): o mesmo pedaço de texto marcado por três pessoas conta 3. list_codings devolve pedaços de texto e, por padrão, uma camada por documento; os dois números não se comparam diretamente.`);
-        return { items: raiz.filter(c=>!redIds.has(c.id)).map(c=>monta(c,1)), total: codes.filter(c=>!redIds.has(c.id)).length, notes };
+        // `total` counts what THIS call covers: with parent_id, the codes under that parent (at any
+        // depth), not the whole project, which made a model read a branch of 4 as "4 of 665".
+        // Walked with a visited set, so a cycle in parent_id cannot loop (S05).
+        let total;
+        if(a.parent_id){
+          const visto = new Set(), pilha = [...(kidsOf[a.parent_id]||[])];
+          while(pilha.length){ const k = pilha.pop(); if(visto.has(k.id)) continue; visto.add(k.id); pilha.push(...(kidsOf[k.id]||[])); }
+          total = [...visto].filter(id=>!redIds.has(id)).length;
+        } else total = codes.filter(c=>!redIds.has(c.id)).length;
+        return { items: raiz.filter(c=>!redIds.has(c.id)).map(c=>monta(c,1)), total, notes };
       }
       case 'list_codings': {
         const ordem = a.order || 'spread';
